@@ -474,6 +474,9 @@ bool DealOneSubmission(nlohmann::json&& data) {
         if (!new_meta.count(i.first)) to_delete.push_back(i.first);
       }
     }
+    if (sub.lang == Compiler::HASKELL) {
+      sub.process_limit = 2;
+    }
 
     // tasks/groups
     auto& tasks = data["tasks"];
