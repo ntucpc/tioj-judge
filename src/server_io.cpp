@@ -417,7 +417,6 @@ bool DealOneSubmission(nlohmann::json&& data) {
       sub.specjudge_compile_args = problem["specjudge_compile_args"].get<std::string>();
 
       if (sub.specjudge_type == SpecjudgeType::HACK) {
-        sub.use_hack_stage_layout = true;
         sub.hackprog_lang = GetCompiler(problem["hackprog_compiler"].get<std::string>());
         std::ofstream(tempdir.HackCodePath()) << problem["hackprog_code"].get<std::string>();
       }

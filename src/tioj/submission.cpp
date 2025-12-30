@@ -355,7 +355,7 @@ bool SetupExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
   }
 
   auto prog = ExecuteBoxProgram(id, subtask, stage, sub.lang);
-  if (sub.use_hack_stage_layout && stage > 0) {
+  if (sub.use_hack_stage_layout() && stage > 0) {
     Copy(CompileBoxOutput(id, CompileSubtask::HACKPROG, sub.lang),
          prog, ExecuteBoxProgramPerm(sub.lang, sub.sandbox_strict));
   } else {
@@ -948,7 +948,7 @@ bool PushSubmission(Submission&& sub, size_t max_queue) {
     if (executes.empty()) Link(compile, summary);
     InsertTaskList(std::move(compile));
   }
-  if (sub.use_hack_stage_layout) {
+  if (sub.use_hack_stage_layout()) {
     TaskEntry compile(id, {TaskType::COMPILE, (int)CompileSubtask::HACKPROG}, priority);
     for (auto& i : executes)
       if (i.size() >= 2)

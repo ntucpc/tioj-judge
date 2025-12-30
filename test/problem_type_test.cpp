@@ -309,7 +309,6 @@ TEST_F(ExampleProblem, Hack) {
   AssertVerdictReporter reporter(Verdict::AC);
   sub.reporter = reporter.GetReporter();
   sub.stages = 2;
-  sub.use_hack_stage_layout = true;
   sub.judge_between_stages = true;
 
   const std::string user_code = R"(#include <cstdio>
