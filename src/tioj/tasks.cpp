@@ -163,11 +163,12 @@ struct cjail_result RunExecute(const SubmissionAndResult& sub_and_result, const 
   spdlog::debug("Generating execute settings: id={} subid={}, subtask={} stage={}",
       id, sub.submission_id, subtask, stage);
   auto& lim = sub.testdata[subtask];
-  std::string program = ExecuteBoxProgram(-1, -1, -1, sub.lang, true);
+  const auto lang = (sub.use_hack_stage_layout() && stage > 0) ? sub.hackprog_lang : sub.lang;
+  std::string program = ExecuteBoxProgram(-1, -1, -1, lang, true);
 
   SandboxOptions opt;
   opt.boxdir = ExecuteBoxPath(id, subtask, stage);
-  opt.command = ExecuteCommand(sub.lang, program);
+  opt.command = ExecuteCommand(lang, program);
   if (sub.stages > 1) opt.command.push_back(std::to_string(stage));
   opt.workdir = Workdir("/");
   if (cpuid != -1) opt.cpu_set.push_back(cpuid);
@@ -190,7 +191,7 @@ struct cjail_result RunExecute(const SubmissionAndResult& sub_and_result, const 
   opt.fsize = lim.output;
   if (opt.fsize == 0 || opt.fsize > kMaxOutput) opt.fsize = kMaxOutput;
   if (sub.sandbox_strict) {
-    if (sub.lang == Compiler::PYTHON2 || sub.lang == Compiler::PYTHON3) {
+    if (lang == Compiler::PYTHON2 || lang == Compiler::PYTHON3) {
       // TODO: is it possible to run without /usr/bin and /bin? (maybe copy python executable to workdir)
       opt.dirs = {"/usr", "/lib", "/lib64", "/etc/alternatives", "/bin"};
     }

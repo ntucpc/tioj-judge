@@ -347,18 +347,23 @@ bool SetupExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
   CreateDirs(workdir);
   if (!sub.sandbox_strict) { // for non-strict: mount a tmpfs to limit overall filesize
     // TODO FEATURE(io-interactive): create FIFOs outside of workdir by hardlink
+    auto compiled =
+      (sub.use_hack_stage_layout() && stage > 0)
+      ? CompileBoxOutput(id, CompileSubtask::HACKPROG, sub.hackprog_lang)
+      : CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang);
     long tmpfs_size_kib =
-      (fs::file_size(CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang)) / 4096 + 1) * 4 +
+      (fs::file_size(compiled) / 4096 + 1) * 4 +
       (fs::file_size(sub.testdata[subtask].input_file) / 4096 + 1) * 4 +
       std::min(sub.testdata[subtask].output * 2, kMaxOutput);
     MountTmpfs(workdir, tmpfs_size_kib);
   }
 
-  auto prog = ExecuteBoxProgram(id, subtask, stage, sub.lang);
   if (sub.use_hack_stage_layout() && stage > 0) {
-    Copy(CompileBoxOutput(id, CompileSubtask::HACKPROG, sub.lang),
-         prog, ExecuteBoxProgramPerm(sub.lang, sub.sandbox_strict));
+    auto prog = ExecuteBoxProgram(id, subtask, stage, sub.hackprog_lang);
+    Copy(CompileBoxOutput(id, CompileSubtask::HACKPROG, sub.hackprog_lang),
+         prog, ExecuteBoxProgramPerm(sub.hackprog_lang, sub.sandbox_strict));
   } else {
+    auto prog = ExecuteBoxProgram(id, subtask, stage, sub.lang);
     Copy(CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang),
          prog, ExecuteBoxProgramPerm(sub.lang, sub.sandbox_strict));
   }
