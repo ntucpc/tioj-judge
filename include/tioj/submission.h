@@ -20,6 +20,7 @@ extern double kTimeMultiplier;
   X(NORMAL) \
   X(SPECJUDGE_OLD) \
   X(SPECJUDGE_NEW) \
+  X(HACK) \
   X(SKIP) // should be the last one
 enum class SpecjudgeType {
 #define X(name) name,
@@ -88,6 +89,12 @@ enum class Verdict {
 #undef X
 };
 
+
+enum class StageLayout {
+  NORMAL,
+  HACK,
+};
+
 class SubmissionResult;
 
 class Submission {
@@ -112,6 +119,12 @@ class Submission {
   Compiler summary_lang;
   std::string user_compile_args, specjudge_compile_args;
   int stages;
+  bool use_hack_stage_layout;
+  // In the hack stage layout, the user's program would only
+  // be executed in the first stage. In the rest stages,
+  // the program to execute would be the program to hack,
+  // instead of user's program.
+  Compiler hackprog_lang;
   bool judge_between_stages;
   bool sandbox_strict; // false for backward-compatability
   int process_limit;
@@ -159,7 +172,7 @@ class Submission {
       specjudge_lang(Compiler::GCC_CPP_17),
       summary_lang(Compiler::GCC_CPP_17),
       stages(1),
-      judge_between_stages(false),
+      use_hack_stage_layout(false),
       sandbox_strict(false),
       process_limit(1),
       report_intermediate_stage(false),

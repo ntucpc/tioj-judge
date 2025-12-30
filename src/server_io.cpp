@@ -317,6 +317,7 @@ class TempDirectory { // RAII tempdir
  public:
   const fs::path& Path() const { return path_; }
   fs::path UserCodePath() const { return path_ / "code"; }
+  fs::path HackCodePath() const { return path_ / "hackcode"; }
   fs::path SpecjudgePath() const { return path_ / "sjcode"; }
   fs::path InterlibPath() const { return path_ / "interlib"; }
   fs::path InterlibImplPath() const { return path_ / "interlib_impl"; }
@@ -414,7 +415,14 @@ bool DealOneSubmission(nlohmann::json&& data) {
       sub.judge_between_stages = problem["judge_between_stages"].get<bool>();
       std::ofstream(tempdir.SpecjudgePath()) << problem["sjcode"].get<std::string>();
       sub.specjudge_compile_args = problem["specjudge_compile_args"].get<std::string>();
+
+      if (sub.specjudge_type == SpecjudgeType::HACK) {
+        sub.use_hack_stage_layout = true;
+        sub.hackprog_lang = GetCompiler(problem["hackprog_compiler"].get<std::string>());
+        std::ofstream(tempdir.HackCodePath()) << problem["hackprog_code"].get<std::string>();
+      }
     }
+
     sub.interlib_type = (InterlibType)problem["interlib_type"].get<int>();
     if (sub.interlib_type != InterlibType::NONE) {
       std::ofstream(tempdir.InterlibPath()) << problem["interlib"].get<std::string>();
@@ -561,6 +569,9 @@ bool DealOneSubmission(nlohmann::json&& data) {
   }
   if (sub.summary_type != SummaryType::NONE) {
     Move(tempdir.SummaryPath(), SubmissionSummaryCode(sub.submission_internal_id));
+  }
+  if (sub.specjudge_type == SpecjudgeType::HACK) {
+    Move(tempdir.HackCodePath(), SubmissionHackCode(sub.submission_internal_id));
   }
   PushSubmission(std::move(sub));
   return true;

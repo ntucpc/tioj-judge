@@ -201,6 +201,7 @@ inline Compiler GetLang(const Submission& sub, CompileSubtask subtask) {
     case CompileSubtask::USERPROG: return sub.lang;
     case CompileSubtask::SPECJUDGE: return sub.specjudge_lang;
     case CompileSubtask::SUMMARY: return sub.summary_lang;
+    case CompileSubtask::HACKPROG: return sub.hackprog_lang;
   }
   __builtin_unreachable();
 }
@@ -227,6 +228,10 @@ bool SetupCompile(const SubmissionAndResult& sub_and_result, const TaskEntry& ta
       Copy(SubmissionSummaryCode(id), code_dest, kPerm666);
       break;
     }
+    case CompileSubtask::HACKPROG: {
+      Copy(SubmissionHackCode(id), code_dest, kPerm666);
+      break;
+    }
   }
   switch (subtask) { // copy other dependencies
     case CompileSubtask::USERPROG: {
@@ -241,6 +246,7 @@ bool SetupCompile(const SubmissionAndResult& sub_and_result, const TaskEntry& ta
       }
       break;
     }
+    case CompileSubtask::HACKPROG: [[fallthrough]];
     case CompileSubtask::SPECJUDGE: [[fallthrough]];
     case CompileSubtask::SUMMARY: {
       fs::path src = SpecjudgeHeadersPath();
@@ -307,6 +313,7 @@ void FinalizeCompile(SubmissionAndResult& sub_and_result, const TaskEntry& task,
         if (sub.reporter.ReportCEMessage) sub.reporter.ReportCEMessage(sub, sub_res);
         break;
       }
+      case CompileSubtask::HACKPROG: [[fallthrough]];
       case CompileSubtask::SPECJUDGE: {
         sub_res.er_message = std::move(message);
         if (sub.reporter.ReportERMessage) sub.reporter.ReportERMessage(sub, sub_res);
@@ -346,9 +353,16 @@ bool SetupExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
       std::min(sub.testdata[subtask].output * 2, kMaxOutput);
     MountTmpfs(workdir, tmpfs_size_kib);
   }
+
   auto prog = ExecuteBoxProgram(id, subtask, stage, sub.lang);
-  Copy(CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang),
-       prog, ExecuteBoxProgramPerm(sub.lang, sub.sandbox_strict));
+  if (sub.use_hack_stage_layout && stage > 0) {
+    Copy(CompileBoxOutput(id, CompileSubtask::HACKPROG, sub.lang),
+         prog, ExecuteBoxProgramPerm(sub.lang, sub.sandbox_strict));
+  } else {
+    Copy(CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang),
+         prog, ExecuteBoxProgramPerm(sub.lang, sub.sandbox_strict));
+  }
+
   auto input_file = ExecuteBoxInput(id, subtask, stage, sub.sandbox_strict);
   if (sub.sandbox_strict) {
     CreateDirs(ExecuteBoxTdStrictPath(id, subtask, stage), fs::perms::owner_all); // 700
@@ -454,7 +468,8 @@ bool SetupScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
   if (td_result.skip_stage) return false;
   // if already TLE/MLE/etc, do not invoke old-style special judge
   if (td_result.verdict != Verdict::NUL &&
-      sub.specjudge_type != SpecjudgeType::SPECJUDGE_NEW) {
+      sub.specjudge_type != SpecjudgeType::SPECJUDGE_NEW &&
+      sub.specjudge_type != SpecjudgeType::HACK) {
     FinalizeScoring(sub_and_result, task, {}, true);
     return false;
   }
@@ -926,14 +941,25 @@ bool PushSubmission(Submission&& sub, size_t max_queue) {
     }
     Link(scorings[i].back(), summary);
   }
+
   {
     TaskEntry compile(id, {TaskType::COMPILE, (int)CompileSubtask::USERPROG}, priority);
     for (auto& i : executes) Link(compile, i[0]);
     if (executes.empty()) Link(compile, summary);
     InsertTaskList(std::move(compile));
   }
+  if (sub.use_hack_stage_layout) {
+    TaskEntry compile(id, {TaskType::COMPILE, (int)CompileSubtask::HACKPROG}, priority);
+    for (auto& i : executes)
+      if (i.size() >= 2)
+        Link(compile, i[1]);
+    if (executes.empty()) Link(compile, summary);
+    InsertTaskList(std::move(compile));
+  }
+
   if (sub.specjudge_type == SpecjudgeType::SPECJUDGE_OLD ||
-      sub.specjudge_type == SpecjudgeType::SPECJUDGE_NEW) {
+      sub.specjudge_type == SpecjudgeType::SPECJUDGE_NEW ||
+      sub.specjudge_type == SpecjudgeType::HACK) {
     TaskEntry compile(id, {TaskType::COMPILE, (int)CompileSubtask::SPECJUDGE}, priority);
     for (auto& i : scorings) Link(compile, i[0]);
     if (executes.empty()) Link(compile, summary);

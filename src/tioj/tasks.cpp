@@ -81,6 +81,7 @@ struct cjail_result RunCompile(const SubmissionAndResult& sub_and_result, const 
     }
     case CompileSubtask::SPECJUDGE: lang = sub.specjudge_lang; break;
     case CompileSubtask::SUMMARY: lang = sub.summary_lang; break;
+    case CompileSubtask::HACKPROG: lang = sub.hackprog_lang; break;
     default: __builtin_unreachable();
   }
   std::string input = CompileBoxInput(-1, subtask, lang, true);
@@ -121,7 +122,8 @@ struct cjail_result RunCompile(const SubmissionAndResult& sub_and_result, const 
     }
     default: __builtin_unreachable();
   }
-  if (subtask != CompileSubtask::SUMMARY) { // add custom arguments
+  if (subtask == CompileSubtask::USERPROG ||
+      subtask == CompileSubtask::SPECJUDGE) { // add custom arguments
     auto& additional_args = subtask == CompileSubtask::USERPROG ? sub.user_compile_args : sub.specjudge_compile_args;
     if (additional_args.size()) {
       setenv("INPUT", input.c_str(), 1);

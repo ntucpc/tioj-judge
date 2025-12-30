@@ -15,7 +15,8 @@ enum class TaskType {
 #define ENUM_COMPILE_SUBTASK_ \
   X(USERPROG) \
   X(SPECJUDGE) \
-  X(SUMMARY)
+  X(SUMMARY) \
+  X(HACKPROG)
 enum class CompileSubtask : int {
 #define X(name) name,
   ENUM_COMPILE_SUBTASK_
