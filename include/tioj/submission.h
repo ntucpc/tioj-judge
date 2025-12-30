@@ -90,11 +90,6 @@ enum class Verdict {
 };
 
 
-enum class StageLayout {
-  NORMAL,
-  HACK,
-};
-
 class SubmissionResult;
 
 class Submission {
