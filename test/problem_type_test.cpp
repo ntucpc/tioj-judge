@@ -303,3 +303,50 @@ int main(){})", SpecjudgeType::NORMAL, "", SummaryType::CUSTOM, R"(#include <cst
 int main(){ puts("{\"verdict\":\"AC\",\"score\":\"23\",\"total_time_us\":123456,\"ce_message\":\"meow\"}"); })", "");
   RunAndTeardownSubmission(id);
 }
+
+TEST_F(ExampleProblem, Hack) {
+  SetUp(1, 1, 1);
+  AssertVerdictReporter reporter(Verdict::AC);
+  sub.reporter = reporter.GetReporter();
+  sub.stages = 2;
+  sub.use_hack_stage_layout = true;
+  sub.judge_between_stages = true;
+
+  const std::string user_code = R"(#include <cstdio>
+int main() {
+  printf("42");
+})";
+
+  const std::string hack_code = R"(#include <cstdio>
+int main() {
+  int n;
+  scanf("%d", &n);
+  if (n == 42) return 1; // returns RE
+  return 0;
+})";
+
+  const std::string specjudge_code = R"(#include <iostream>
+#include <fstream>
+#include "nlohmann/json.hpp"
+int main(int argc, char** argv){
+  std::ifstream fin(argv[1]); nlohmann::json data; fin >> data;
+  int current_stage = data["current_stage"].get<int>();
+
+  if (current_stage == 0) {
+    // Do nothing, continue to next stage
+  } else if (current_stage == 1) {
+    if (data["original_verdict"].get<std::string>() == "RE") {
+      std::cout << nlohmann::json{{"verdict", "AC"}};
+    } else {
+      std::cout << nlohmann::json{{"verdict", "WA"}, {"message", "Hack failed: program did not crash."}};
+    }
+  }
+})";
+
+  long id = SetupSubmission(sub, 1, Compiler::GCC_CPP_17, kTime, false,
+                           user_code,
+                           SpecjudgeType::HACK, specjudge_code,
+                           SummaryType::NONE, "",
+                           hack_code);
+  RunAndTeardownSubmission(id);
+}
