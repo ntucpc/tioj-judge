@@ -29,10 +29,8 @@ TEST_P(ExampleProblemVerdict, Ver) {
   AssertVerdictReporter reporter(param.verdict, (int)param.verdict < (int)Verdict::CE);
   sub.reporter = reporter.GetReporter();
   Submission sub1 = sub, sub2 = sub;
-  int id1 = SetupSubmission(sub1, param.sub_id+1, Compiler::GCC_CPP_17, kTime, true, param.code,
-                           SpecjudgeType::NORMAL, "", SummaryType::NONE, "", "");
-  int id2 = SetupSubmission(sub2, param.sub_id+2, Compiler::GCC_CPP_17, kTime, false, param.code,
-                           SpecjudgeType::NORMAL, "", SummaryType::NONE, "", "");
+  int id1 = SetupSubmission(sub1, param.sub_id+1, Compiler::GCC_CPP_17, kTime, true, param.code);
+  int id2 = SetupSubmission(sub2, param.sub_id+2, Compiler::GCC_CPP_17, kTime, false, param.code);
   PushSubmission(std::move(sub1));
   PushSubmission(std::move(sub2));
   WorkLoop(false);
