@@ -167,6 +167,8 @@ class Submission {
       specjudge_lang(Compiler::GCC_CPP_17),
       summary_lang(Compiler::GCC_CPP_17),
       stages(1),
+      hackprog_lang(Compiler::GCC_CPP_17),
+      judge_between_stages(false),
       sandbox_strict(false),
       process_limit(1),
       report_intermediate_stage(false),
