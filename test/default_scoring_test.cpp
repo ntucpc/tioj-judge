@@ -53,7 +53,7 @@ TEST_P(ExampleProblemDefaultScoring, Mode) {
   sub.default_scoring_args = param.default_scoring_args;
   long id = SetupSubmission(sub, 5, Compiler::GCC_CPP_17, kTime, true, R"(#include <unistd.h>
 char buf[256];
-int main(){ write(1, buf, read(0, buf, 256)); })", SpecjudgeType::NORMAL);
+int main(){ write(1, buf, read(0, buf, 256)); })", SpecjudgeType::NORMAL, "", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 

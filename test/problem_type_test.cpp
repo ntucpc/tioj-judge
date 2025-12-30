@@ -17,7 +17,7 @@ TEST_F(ExampleProblem, SpecjudgeOldProblemOneSubmission) {
   long id = SetupSubmission(sub, 5, Compiler::GCC_CPP_17, kTime, true, R"(#include <cstdio>
 int main(){ puts("what"); })", SpecjudgeType::SPECJUDGE_OLD, R"(#include <cstdio>
 #include "nlohmann/json.hpp"
-int main(){ puts("0"); })");
+int main(){ puts("0"); })", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 
@@ -32,7 +32,7 @@ TEST_F(ExampleProblem, SpecjudgeOldSetResult) {
   };
   long id = SetupSubmission(sub, 5, Compiler::GCC_CPP_17, kTime, true, R"(#include <cstdio>
 int main(){ puts("what"); })", SpecjudgeType::SPECJUDGE_OLD, R"(#include <cstdio>
-int main(){ puts("0 SPECJUDGE_OVERRIDE_VERDICT TLE SPECJUDGE_OVERRIDE_SCORE 1.234567"); })");
+int main(){ puts("0 SPECJUDGE_OVERRIDE_VERDICT TLE SPECJUDGE_OVERRIDE_SCORE 1.234567"); })", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 
@@ -48,7 +48,7 @@ TEST_F(ExampleProblem, SpecjudgeNewProblemOneSubmission) {
   long id = SetupSubmission(sub, 6, Compiler::GCC_CPP_17, kTime, true, R"(#include <cstdio>
 int main(){ puts("what"); })", SpecjudgeType::SPECJUDGE_NEW, R"(#include <iostream>
 #include "nlohmann/json.hpp"
-int main(){ std::cout << nlohmann::json{{"verdict", "AC"}, {"score", "1.234567"}}; })");
+int main(){ std::cout << nlohmann::json{{"verdict", "AC"}, {"score", "1.234567"}}; })", SummaryType::NONE, "", "");
   PushSubmission(std::move(sub));
   WorkLoop(false);
   TeardownSubmission(id);
@@ -61,7 +61,7 @@ TEST_F(ExampleProblem, Multistage) {
   sub.stages = 3;
   // stage 0 +1, stage 2 -1
   long id = SetupSubmission(sub, 7, Compiler::GCC_CPP_17, kTime, false, R"(#include <cstdio>
-int main(int argc, char** argv){ int a; scanf("%d",&a); printf("%d", a+argv[1][0]-'1'); })");
+int main(int argc, char** argv){ int a; scanf("%d",&a); printf("%d", a+argv[1][0]-'1'); })", SpecjudgeType::NORMAL, "", SummaryType::NONE, "", "");
   PushSubmission(std::move(sub));
   WorkLoop(false);
   TeardownSubmission(id);
@@ -81,7 +81,7 @@ int main(int argc, char** argv){ auto a = clock(); while (clock()-a<0.6*CLOCKS_P
 int main(int argc, char**argv){
   std::ifstream fin(argv[1]); nlohmann::json data; fin >> data;
   std::cout << nlohmann::json{{"verdict", data["stats"]["original_verdict"].get<std::string>()}};
-})");
+})", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 
@@ -120,7 +120,7 @@ int main(int argc, char**argv){
     if (stage == 1) std::cout << nlohmann::json{{"verdict", ""}};
   }
 }
-)");
+)", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 
@@ -137,7 +137,7 @@ TEST_F(ExampleProblem, MultistageSpecjudgeNewSkip) {
   };
   long id = SetupSubmission(sub, 1, Compiler::GCC_CPP_17, kTime, false, "int main(){}",
       SpecjudgeType::SPECJUDGE_NEW, R"(#include <cstdio>
-int main(){ puts("{\"verdict\":\"AC\"}"); })");
+int main(){ puts("{\"verdict\":\"AC\"}"); })", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 
@@ -169,7 +169,7 @@ int main(int argc, char**argv){
     std::cout << 0;
   }
 }
-)");
+)", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 
@@ -186,7 +186,7 @@ TEST_F(ExampleProblem, MultistageSpecjudgeOldWA) {
   };
   long id = SetupSubmission(sub, 1, Compiler::GCC_CPP_17, kTime, false, R"(#include <cstdio>
 int main(int argc, char** argv){ int a; scanf("%d",&a); printf("%d", a+argv[1][0]-'0'+1); })",
-      SpecjudgeType::SPECJUDGE_OLD, "int main(){}");
+      SpecjudgeType::SPECJUDGE_OLD, "int main(){}", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 
@@ -202,7 +202,7 @@ int main() {
   std::cin >> a;
   std::cout << (a * 1234567890123456789_mpz) / 1234567890123456789_mpz;
 }
-  )");
+  )", SpecjudgeType::NORMAL, "", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 
@@ -214,7 +214,8 @@ TEST_F(ExampleProblem, UserCompileFlagsSubstitution) {
     ASSERT_TRUE(res.ce_message.find("multiple definition of `main") != std::string::npos);
   };
   sub.user_compile_args = "$INPUT";
-  long id = SetupSubmission(sub, 1, Compiler::GCC_CPP_17, kTime, true, "int main(){}");
+  long id = SetupSubmission(sub, 1, Compiler::GCC_CPP_17, kTime, true, "int main(){}",
+                           SpecjudgeType::NORMAL, "", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 
@@ -228,7 +229,7 @@ TEST_F(ExampleProblem, SpecjudgeCompileFlags) {
 #include <gmpxx.h>
 int main(int argc, char**argv){
   if (argc * 1234567890123456789_mpz == argc * 1234567890123456789_mpz) std::cout << 0_mpz;
-})");
+})", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 
@@ -250,7 +251,7 @@ TEST_F(ExampleProblem, SkipGroup) {
   };
   long id = SetupSubmission(sub, 5, Compiler::GCC_CPP_17, kTime, true, R"(#include <cstdio>
 int main(){ while (true); })", SpecjudgeType::SPECJUDGE_OLD, R"(#include <cstdio>
-int main(){ puts("0"); })");
+int main(){ puts("0"); })", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
   ASSERT_EQ(total_results, 2);
 }
@@ -277,7 +278,7 @@ int main(int argc, char** argv){
   int td = 0;
   std::ifstream(argv[2]) >> td;
   printf("0\nSPECJUDGE_OVERRIDE_SCORE %d\n", 100 - td * 10);
-})");
+})", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 
@@ -299,6 +300,6 @@ TEST_F(ExampleProblem, SummaryCustom) {
   };
   long id = SetupSubmission(sub, 5, Compiler::GCC_CPP_17, kTime, true, R"(#include <cstdio>
 int main(){})", SpecjudgeType::NORMAL, "", SummaryType::CUSTOM, R"(#include <cstdio>
-int main(){ puts("{\"verdict\":\"AC\",\"score\":\"23\",\"total_time_us\":123456,\"ce_message\":\"meow\"}"); })");
+int main(){ puts("{\"verdict\":\"AC\",\"score\":\"23\",\"total_time_us\":123456,\"ce_message\":\"meow\"}"); })", "");
   RunAndTeardownSubmission(id);
 }

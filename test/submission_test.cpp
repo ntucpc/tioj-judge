@@ -32,7 +32,8 @@ TEST_P(ExampleProblemOneSubmission, Sub) {
   SetUp(1, 5, param.parallel);
   AssertVerdictReporter reporter(Verdict::AC);
   sub.reporter = reporter.GetReporter();
-  long id = SetupSubmission(sub, param.sub_id, param.lang, kTime, param.is_strict, param.code);
+  long id = SetupSubmission(sub, param.sub_id, param.lang, kTime, param.is_strict, param.code,
+                           SpecjudgeType::NORMAL, "", SummaryType::NONE, "", "");
   RunAndTeardownSubmission(id);
 }
 INSTANTIATE_TEST_SUITE_P(OneSubmission, ExampleProblemOneSubmission,
