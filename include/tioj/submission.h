@@ -118,6 +118,7 @@ class Submission {
   // in these stages, run the problem program instead of the user program
   std::set<int> problem_prog_stages;
   bool judge_between_stages;
+  bool judge_abnormally_terminated;
   bool sandbox_strict; // false for backward-compatability
   int process_limit;
   std::vector<std::string> default_scoring_args;
@@ -166,6 +167,7 @@ class Submission {
       problem_prog_lang(Compiler::GCC_CPP_17),
       stages(1),
       judge_between_stages(false),
+      judge_abnormally_terminated(false),
       sandbox_strict(false),
       process_limit(1),
       report_intermediate_stage(false),

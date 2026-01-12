@@ -24,6 +24,7 @@ long SetupSubmission(
   if (spec_type != SpecjudgeType::NORMAL) {
     sub.specjudge_type = spec_type;
     sub.specjudge_lang = Compiler::GCC_CPP_17;
+    sub.judge_abnormally_terminated = spec_type == SpecjudgeType::SPECJUDGE_NEW;
     std::ofstream fout(SubmissionJudgeCode(iid));
     fout << specjudge_code;
   }
