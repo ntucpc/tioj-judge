@@ -1,13 +1,11 @@
 #include "tasks.h"
 
 #include <fcntl.h>
-#include <signal.h>
 #include <unistd.h>
 #include <wordexp.h>
 #include <sys/wait.h>
 #include <sys/sysinfo.h>
 #include <map>
-#include <numeric>
 #include <unordered_map>
 
 #include <spdlog/spdlog.h>
@@ -273,7 +271,11 @@ struct cjail_result RunScoring(const SubmissionAndResult& sub_and_result, const 
     }
   }
   opt.workdir = Workdir("/");
-  opt.input = "/dev/null";
+  if (sub.specjudge_type == SpecjudgeType::SPECJUDGE_OLD) {
+    opt.input = ScoringBoxMetaFile(-1, -1, -1, true);
+  } else {
+    opt.input = "/dev/null";
+  }
   opt.output = ScoringBoxOutput(-1, -1, -1, true);
   opt.error = "/dev/null";
   if (cpuid != -1) opt.cpu_set.push_back(cpuid);

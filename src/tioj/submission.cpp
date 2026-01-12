@@ -115,6 +115,17 @@ nlohmann::json SubmissionAndResult::SummaryMeta() const {
   };
 }
 
+std::string SubmissionAndResult::TestdataMetaOld(int subtask) const {
+  const SubmissionResult::TestdataResult& td_result = result.td_results[subtask];
+  std::stringstream ss;
+  ss << (td_result.verdict == Verdict::NUL ? "NONE" : VerdictToAbr(td_result.verdict)) << "\n"
+     << subtask << "\n"
+     << td_result.time << "\n"
+     << td_result.vss << "\n"
+     << td_result.rss << "\n";
+  return ss.str();
+}
+
 namespace {
 
 // TaskEntry will form a dependency directed graph
@@ -474,9 +485,8 @@ bool SetupScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
   auto& td_result = res.td_results[subtask];
   // if specjudge demends skip, skip anyway
   if (td_result.skip_stage) return false;
-  // if already TLE/MLE/etc, do not invoke old-style special judge
-  if (td_result.verdict != Verdict::NUL &&
-      sub.specjudge_type != SpecjudgeType::SPECJUDGE_NEW) {
+  // if already TLE/MLE/etc, do not invoke judge when configured to do so
+  if (td_result.verdict != Verdict::NUL && !sub.judge_abnormally_terminated) {
     FinalizeScoring(sub_and_result, task, {}, true);
     return false;
   }
@@ -516,7 +526,11 @@ bool SetupScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
   }
   { // write meta file
     std::ofstream fout(ScoringBoxMetaFile(id, subtask, stage));
-    fout << sub_and_result.TestdataMeta(subtask, stage).dump(-1, ' ', false, nlohmann::json::error_handler_t::ignore);
+    if (sub.specjudge_type == SpecjudgeType::SPECJUDGE_OLD) {
+      fout << sub_and_result.TestdataMetaOld(subtask);
+    } else {
+      fout << sub_and_result.TestdataMeta(subtask, stage).dump(-1, ' ', false, nlohmann::json::error_handler_t::ignore);
+    }
   }
   return true;
 }
@@ -543,6 +557,21 @@ void ReadOldSpecjudgeResult(const fs::path& output_path, bool last_stage, Submis
         if (fin >> cmd) {
           td_result.verdict = AbrToVerdict(cmd, true);
           if (!score_overriden && td_result.verdict == Verdict::AC) td_result.score = 100'000'000;
+        }
+      } else if (cmd == "SPECJUDGE_OVERRIDE_TIME_US") {
+        long time_us;
+        if (fin >> time_us) {
+          td_result.time = time_us;
+        }
+      } else if (cmd == "SPECJUDGE_OVERRIDE_VSS_KIB") {
+        long vss_kib;
+        if (fin >> vss_kib) {
+          td_result.vss = vss_kib;
+        }
+      } else if (cmd == "SPECJUDGE_OVERRIDE_RSS_KIB") {
+        long rss_kib;
+        if (fin >> rss_kib) {
+          td_result.rss = rss_kib;
         }
       } else {
         break;

@@ -154,5 +154,5 @@ if(TIOJ_BUILD_TESTS)
   target_link_libraries(judge-test gtest_main libtioj spdlog::spdlog)
 
   include(GoogleTest)
-  gtest_discover_tests(judge-test)
+  gtest_discover_tests(judge-test DISCOVERY_MODE PRE_TEST)
 endif()
