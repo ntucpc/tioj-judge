@@ -8,7 +8,7 @@ long SetupSubmission(
     Submission& sub, int id, Compiler lang, long time, bool sandbox_strict, const std::string& code,
     SpecjudgeType spec_type, const std::string& specjudge_code,
     SummaryType summary_type, const std::string& summary_code,
-    const std::string& hackprog_code,
+    const std::string& hack_code,
     int submitter_id) {
   sub.submission_id = id;
   long iid = sub.submission_internal_id = GetUniqueSubmissionInternalId();
@@ -33,10 +33,13 @@ long SetupSubmission(
     std::ofstream fout(SubmissionSummaryCode(iid));
     fout << summary_code;
   }
-  if (spec_type == SpecjudgeType::HACK) {
-    sub.hackprog_lang = Compiler::GCC_CPP_17;
-    std::ofstream fout(SubmissionHackCode(iid));
-    fout << hackprog_code;
+  if (hack_code.size() > 0) {
+    sub.problem_prog_lang = Compiler::GCC_CPP_17;
+    for (int i = 1; i < sub.stages; i++) {
+      sub.problem_prog_stages.insert(i);
+    }
+    std::ofstream fout(SubmissionProblemProgCode(iid));
+    fout << hack_code;
   }
   return iid;
 }

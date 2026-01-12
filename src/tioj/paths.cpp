@@ -68,8 +68,8 @@ inline std::string CompileCodeName(CompileSubtask subtask, Compiler lang) {
       return "judge" + extension;
     case CompileSubtask::SUMMARY:
       return "summary" + extension;
-    case CompileSubtask::HACKPROG:
-      return "to_be_hacked" + extension;
+    case CompileSubtask::PROBPROG:
+      return "prob_prog" + extension;
   }
   __builtin_unreachable();
 }
@@ -84,8 +84,8 @@ inline std::string CompileResultName(CompileSubtask subtask, Compiler lang) {
       return "judge" + extension;
     case CompileSubtask::SUMMARY:
       return "summary" + extension;
-    case CompileSubtask::HACKPROG:
-      return "to_be_hacked" + extension;
+    case CompileSubtask::PROBPROG:
+      return "prob_prog" + extension;
   }
   __builtin_unreachable();
 }
@@ -248,8 +248,8 @@ fs::path SubmissionCodePath(int id) {
 fs::path SubmissionUserCode(int id) {
   return SubmissionCodePath(id) / "prog";
 }
-fs::path SubmissionHackCode(int id) {
-  return SubmissionCodePath(id) / "to_be_hacked";
+fs::path SubmissionProblemProgCode(int id) {
+  return SubmissionCodePath(id) / "prob_prog";
 }
 fs::path SubmissionJudgeCode(int id) {
   return SubmissionCodePath(id) / "judge";

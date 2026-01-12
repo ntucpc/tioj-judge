@@ -361,7 +361,7 @@ int main(int argc, char** argv){
 
   long id = SetupSubmission(sub, 1, Compiler::GCC_CPP_17, kTime, false,
                            user_code,
-                           SpecjudgeType::HACK, specjudge_code,
+                           SpecjudgeType::SPECJUDGE_NEW, specjudge_code,
                            SummaryType::NONE, "",
                            hack_code);
   RunAndTeardownSubmission(id);

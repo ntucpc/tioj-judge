@@ -202,7 +202,7 @@ inline Compiler GetLang(const Submission& sub, CompileSubtask subtask) {
     case CompileSubtask::USERPROG: return sub.lang;
     case CompileSubtask::SPECJUDGE: return sub.specjudge_lang;
     case CompileSubtask::SUMMARY: return sub.summary_lang;
-    case CompileSubtask::HACKPROG: return sub.hackprog_lang;
+    case CompileSubtask::PROBPROG: return sub.problem_prog_lang;
   }
   __builtin_unreachable();
 }
@@ -229,8 +229,8 @@ bool SetupCompile(const SubmissionAndResult& sub_and_result, const TaskEntry& ta
       Copy(SubmissionSummaryCode(id), code_dest, kPerm666);
       break;
     }
-    case CompileSubtask::HACKPROG: {
-      Copy(SubmissionHackCode(id), code_dest, kPerm666);
+    case CompileSubtask::PROBPROG: {
+      Copy(SubmissionProblemProgCode(id), code_dest, kPerm666);
       break;
     }
   }
@@ -247,7 +247,7 @@ bool SetupCompile(const SubmissionAndResult& sub_and_result, const TaskEntry& ta
       }
       break;
     }
-    case CompileSubtask::HACKPROG: [[fallthrough]];
+    case CompileSubtask::PROBPROG: [[fallthrough]];
     case CompileSubtask::SPECJUDGE: [[fallthrough]];
     case CompileSubtask::SUMMARY: {
       fs::path src = SpecjudgeHeadersPath();
@@ -314,7 +314,7 @@ void FinalizeCompile(SubmissionAndResult& sub_and_result, const TaskEntry& task,
         if (sub.reporter.ReportCEMessage) sub.reporter.ReportCEMessage(sub, sub_res);
         break;
       }
-      case CompileSubtask::HACKPROG: [[fallthrough]];
+      case CompileSubtask::PROBPROG: [[fallthrough]];
       case CompileSubtask::SPECJUDGE: {
         sub_res.er_message = std::move(message);
         if (sub.reporter.ReportERMessage) sub.reporter.ReportERMessage(sub, sub_res);
@@ -346,11 +346,13 @@ bool SetupExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
   if (stage > 0 && (td_result.skip_stage || td_result.verdict != Verdict::NUL)) return false;
   auto workdir = Workdir(ExecuteBoxPath(id, subtask, stage));
   CreateDirs(workdir);
+
+  bool is_problem_prog_stage = sub.problem_prog_stages.count(stage);
   if (!sub.sandbox_strict) { // for non-strict: mount a tmpfs to limit overall filesize
     // TODO FEATURE(io-interactive): create FIFOs outside of workdir by hardlink
     auto compiled =
-      sub.is_hack_stage(stage)
-      ? CompileBoxOutput(id, CompileSubtask::HACKPROG, sub.hackprog_lang)
+      is_problem_prog_stage 
+      ? CompileBoxOutput(id, CompileSubtask::PROBPROG, sub.problem_prog_lang)
       : CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang);
     long tmpfs_size_kib =
       (fs::file_size(compiled) / 4096 + 1) * 4 +
@@ -359,10 +361,10 @@ bool SetupExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
     MountTmpfs(workdir, tmpfs_size_kib);
   }
 
-  if (sub.is_hack_stage(stage)) {
-    auto prog = ExecuteBoxProgram(id, subtask, stage, sub.hackprog_lang);
-    Copy(CompileBoxOutput(id, CompileSubtask::HACKPROG, sub.hackprog_lang),
-         prog, ExecuteBoxProgramPerm(sub.hackprog_lang, sub.sandbox_strict));
+  if (is_problem_prog_stage) {
+    auto prog = ExecuteBoxProgram(id, subtask, stage, sub.problem_prog_lang);
+    Copy(CompileBoxOutput(id, CompileSubtask::PROBPROG, sub.problem_prog_lang),
+         prog, ExecuteBoxProgramPerm(sub.problem_prog_lang, sub.sandbox_strict));
   } else {
     auto prog = ExecuteBoxProgram(id, subtask, stage, sub.lang);
     Copy(CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang),
@@ -474,8 +476,7 @@ bool SetupScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
   if (td_result.skip_stage) return false;
   // if already TLE/MLE/etc, do not invoke old-style special judge
   if (td_result.verdict != Verdict::NUL &&
-      sub.specjudge_type != SpecjudgeType::SPECJUDGE_NEW &&
-      sub.specjudge_type != SpecjudgeType::HACK) {
+      sub.specjudge_type != SpecjudgeType::SPECJUDGE_NEW) {
     FinalizeScoring(sub_and_result, task, {}, true);
     return false;
   }
@@ -958,24 +959,29 @@ bool PushSubmission(Submission&& sub, size_t max_queue) {
     Link(scorings[i].back(), summary);
   }
 
-  {
+  int first_non_prob_stage = -1;
+  int first_prob_stage = sub.problem_prog_stages.empty() ? -1 : *sub.problem_prog_stages.begin();
+  for (int i = 0; i < sub.stages; i++) {
+    if (sub.problem_prog_stages.count(i) == 0) {
+      first_non_prob_stage = i;
+      break;
+    }
+  }
+  if (first_non_prob_stage != -1) {
     TaskEntry compile(id, {TaskType::COMPILE, (int)CompileSubtask::USERPROG}, priority);
-    for (auto& i : executes) Link(compile, i[0]);
+    for (auto& i : executes) Link(compile, i[first_non_prob_stage]);
     if (executes.empty()) Link(compile, summary);
     InsertTaskList(std::move(compile));
   }
-  if (sub.specjudge_type == SpecjudgeType::HACK) {
-    TaskEntry compile(id, {TaskType::COMPILE, (int)CompileSubtask::HACKPROG}, priority);
-    for (auto& i : executes) {
-      if (i.size() >= 2) Link(compile, i[1]);
-    }
+  if (first_prob_stage != -1) {
+    TaskEntry compile(id, {TaskType::COMPILE, (int)CompileSubtask::PROBPROG}, priority);
+    for (auto& i : executes) Link(compile, i[first_prob_stage]);
     if (executes.empty()) Link(compile, summary);
     InsertTaskList(std::move(compile));
   }
 
   if (sub.specjudge_type == SpecjudgeType::SPECJUDGE_OLD ||
-      sub.specjudge_type == SpecjudgeType::SPECJUDGE_NEW ||
-      sub.specjudge_type == SpecjudgeType::HACK) {
+      sub.specjudge_type == SpecjudgeType::SPECJUDGE_NEW) {
     TaskEntry compile(id, {TaskType::COMPILE, (int)CompileSubtask::SPECJUDGE}, priority);
     for (auto& i : scorings) Link(compile, i[0]);
     if (executes.empty()) Link(compile, summary);

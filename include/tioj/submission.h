@@ -1,6 +1,7 @@
 #ifndef INCLUDE_TIOJ_SUBMISSION_H_
 #define INCLUDE_TIOJ_SUBMISSION_H_
 
+#include <set>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -20,7 +21,6 @@ extern double kTimeMultiplier;
   X(NORMAL) \
   X(SPECJUDGE_OLD) \
   X(SPECJUDGE_NEW) \
-  X(HACK) \
   X(SKIP) // should be the last one
 enum class SpecjudgeType {
 #define X(name) name,
@@ -112,16 +112,11 @@ class Submission {
   SummaryType summary_type;
   Compiler specjudge_lang;
   Compiler summary_lang;
-  std::string user_compile_args, specjudge_compile_args;
+  Compiler problem_prog_lang;
+  std::string user_compile_args, specjudge_compile_args, problem_prog_compile_args;
   int stages;
-  bool is_hack_stage(size_t stage) const {
-    return specjudge_type == SpecjudgeType::HACK && stage > 0;
-  }
-  // In the hack stage layout, the user's program would only
-  // be executed in the first stage. In the rest stages,
-  // the program to execute would be the program to hack,
-  // instead of user's program.
-  Compiler hackprog_lang;
+  // in these stages, run the problem program instead of the user program
+  std::set<int> problem_prog_stages;
   bool judge_between_stages;
   bool sandbox_strict; // false for backward-compatability
   int process_limit;
@@ -168,8 +163,8 @@ class Submission {
       summary_type(SummaryType::NONE),
       specjudge_lang(Compiler::GCC_CPP_17),
       summary_lang(Compiler::GCC_CPP_17),
+      problem_prog_lang(Compiler::GCC_CPP_17),
       stages(1),
-      hackprog_lang(Compiler::GCC_CPP_17),
       judge_between_stages(false),
       sandbox_strict(false),
       process_limit(1),

@@ -59,9 +59,39 @@ std::vector<std::string> ExecuteCommand(Compiler lang, const std::string& progra
   __builtin_unreachable();
 }
 
+std::vector<std::string> ParseCommandLine(const std::string& cmdline, const std::string& input, const std::string& output) {
+  std::vector<std::string> result;
+  if (cmdline.size()) {
+    setenv("INPUT", input.c_str(), 1);
+    setenv("OUTPUT", output.c_str(), 1);
+    if (wordexp_t args; wordexp(cmdline.c_str(), &args, WRDE_NOCMD) == 0) {
+      for (size_t i = 0; i < args.we_wordc; i++) result.push_back(args.we_wordv[i]);
+      wordfree(&args);
+    }
+    unsetenv("INPUT");
+    unsetenv("OUTPUT");
+  }
+  return result;
+}
+
+std::vector<std::string> ParseAdditionalArgs(
+    CompileSubtask task, const Submission& sub, const std::string& input, const std::string& output) {
+  switch (task) {
+    case CompileSubtask::USERPROG:
+      return ParseCommandLine(sub.user_compile_args, input, output);
+    case CompileSubtask::SPECJUDGE:
+      return ParseCommandLine(sub.specjudge_compile_args, input, output);
+    case CompileSubtask::SUMMARY:
+      return {};
+    case CompileSubtask::PROBPROG:
+      return ParseCommandLine(sub.problem_prog_compile_args, input, output);
+  }
+  __builtin_unreachable();
+} 
+
 /// child
 // Invoke sandbox with correct settings
-// Results will be parsed in testsuite.cpp
+// Results will be parsed in submission.cpp
 struct cjail_result RunCompile(const SubmissionAndResult& sub_and_result, const Task& task, int uid, int cpuid) {
   const Submission& sub = sub_and_result.sub;
   long id = sub.submission_internal_id;
@@ -81,7 +111,7 @@ struct cjail_result RunCompile(const SubmissionAndResult& sub_and_result, const 
     }
     case CompileSubtask::SPECJUDGE: lang = sub.specjudge_lang; break;
     case CompileSubtask::SUMMARY: lang = sub.summary_lang; break;
-    case CompileSubtask::HACKPROG: lang = sub.hackprog_lang; break;
+    case CompileSubtask::PROBPROG: lang = sub.problem_prog_lang; break;
     default: __builtin_unreachable();
   }
   std::string input = CompileBoxInput(-1, subtask, lang, true);
@@ -122,19 +152,8 @@ struct cjail_result RunCompile(const SubmissionAndResult& sub_and_result, const 
     }
     default: __builtin_unreachable();
   }
-  if (subtask == CompileSubtask::USERPROG ||
-      subtask == CompileSubtask::SPECJUDGE) { // add custom arguments
-    auto& additional_args = subtask == CompileSubtask::USERPROG ? sub.user_compile_args : sub.specjudge_compile_args;
-    if (additional_args.size()) {
-      setenv("INPUT", input.c_str(), 1);
-      setenv("OUTPUT", output.c_str(), 1);
-      if (wordexp_t args; wordexp(additional_args.c_str(), &args, WRDE_NOCMD) == 0) {
-        for (size_t i = 0; i < args.we_wordc; i++) opt.command.push_back(args.we_wordv[i]);
-        wordfree(&args);
-      }
-      unsetenv("INPUT");
-      unsetenv("OUTPUT");
-    }
+  for (const auto& arg : ParseAdditionalArgs(subtask, sub, input, output)) {
+    opt.command.push_back(arg);
   }
   if (char* path = getenv("PATH")) opt.envs.push_back(std::string("PATH=") + path);
   opt.workdir = Workdir("/");
@@ -163,7 +182,7 @@ struct cjail_result RunExecute(const SubmissionAndResult& sub_and_result, const 
   spdlog::debug("Generating execute settings: id={} subid={}, subtask={} stage={}",
       id, sub.submission_id, subtask, stage);
   auto& lim = sub.testdata[subtask];
-  const auto lang = sub.is_hack_stage(stage) ? sub.hackprog_lang : sub.lang;
+  const auto lang = sub.problem_prog_stages.count(stage) ? sub.problem_prog_lang : sub.lang;
   std::string program = ExecuteBoxProgram(-1, -1, -1, lang, true);
 
   SandboxOptions opt;
