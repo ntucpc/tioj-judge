@@ -59,6 +59,7 @@ nlohmann::json SubmissionAndResult::TestdataMeta(int subtask, int stage) const {
     {"current_time_us", td_result.time},
     {"message_type", td_result.message_type},
     {"message", td_result.message},
+    {"tempdir", ScoringBoxTempdir(-1, -1, -1, true)},
     {"limits", {
       {"time_us", lim.time},
       {"vss_kib", lim.vss},
@@ -348,7 +349,7 @@ bool SetupExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
   if (!sub.sandbox_strict) { // for non-strict: mount a tmpfs to limit overall filesize
     // TODO FEATURE(io-interactive): create FIFOs outside of workdir by hardlink
     auto compiled =
-      (sub.use_hack_stage_layout() && stage > 0)
+      sub.is_hack_stage(stage)
       ? CompileBoxOutput(id, CompileSubtask::HACKPROG, sub.hackprog_lang)
       : CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang);
     long tmpfs_size_kib =
@@ -358,7 +359,7 @@ bool SetupExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
     MountTmpfs(workdir, tmpfs_size_kib);
   }
 
-  if (sub.use_hack_stage_layout() && stage > 0) {
+  if (sub.is_hack_stage(stage)) {
     auto prog = ExecuteBoxProgram(id, subtask, stage, sub.hackprog_lang);
     Copy(CompileBoxOutput(id, CompileSubtask::HACKPROG, sub.hackprog_lang),
          prog, ExecuteBoxProgramPerm(sub.hackprog_lang, sub.sandbox_strict));
@@ -506,6 +507,12 @@ bool SetupScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
     Copy(sub.testdata[subtask].input_file, ScoringBoxTdInput(id, subtask, stage), kPerm666);
     Copy(sub.testdata[subtask].answer_file, ScoringBoxTdOutput(id, subtask, stage), kPerm666);
   }
+  // tempdir
+  if (!sub.judge_between_stages || stage == 0) {
+    CreateDirs(ScoringBoxTempdir(id, subtask, stage), fs::perms::all);
+  } else {
+    Move(ScoringBoxTempdir(id, subtask, stage - 1), ScoringBoxTempdir(id, subtask, stage));
+  }
   { // write meta file
     std::ofstream fout(ScoringBoxMetaFile(id, subtask, stage));
     fout << sub_and_result.TestdataMeta(subtask, stage).dump(-1, ' ', false, nlohmann::json::error_handler_t::ignore);
@@ -638,8 +645,12 @@ void FinalizeScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task,
   }
 
   // remove testdata-related files
-  if (last_stage) RemoveAll(ExecuteBoxPath(id, subtask, sub.stages - 1));
-  if (!skipped) RemoveAll(ScoringBoxPath(id, subtask, stage));
+  if (last_stage) {
+    RemoveAll(ExecuteBoxPath(id, subtask, sub.stages - 1));
+    if (!skipped) RemoveAll(ScoringBoxPath(id, subtask, sub.stages - 1));
+  }
+  if (sub.judge_between_stages && stage > 0) RemoveAll(ScoringBoxPath(id, subtask, stage - 1), true);
+
   if (!cancelled_list.count(id)) {
     spdlog::info("Scoring {}: id={} subtask={} verdict={} score={} time={} vss={} rss={}",
                  skipped ? "skipped" : "finished", id, subtask, VerdictToAbr(td_result.verdict),
@@ -953,11 +964,11 @@ bool PushSubmission(Submission&& sub, size_t max_queue) {
     if (executes.empty()) Link(compile, summary);
     InsertTaskList(std::move(compile));
   }
-  if (sub.use_hack_stage_layout()) {
+  if (sub.specjudge_type == SpecjudgeType::HACK) {
     TaskEntry compile(id, {TaskType::COMPILE, (int)CompileSubtask::HACKPROG}, priority);
-    for (auto& i : executes)
-      if (i.size() >= 2)
-        Link(compile, i[1]);
+    for (auto& i : executes) {
+      if (i.size() >= 2) Link(compile, i[1]);
+    }
     if (executes.empty()) Link(compile, summary);
     InsertTaskList(std::move(compile));
   }

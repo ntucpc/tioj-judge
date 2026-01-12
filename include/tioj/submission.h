@@ -114,7 +114,9 @@ class Submission {
   Compiler summary_lang;
   std::string user_compile_args, specjudge_compile_args;
   int stages;
-  bool use_hack_stage_layout() const { return specjudge_type == SpecjudgeType::HACK; }
+  bool is_hack_stage(size_t stage) const {
+    return specjudge_type == SpecjudgeType::HACK && stage > 0;
+  }
   // In the hack stage layout, the user's program would only
   // be executed in the first stage. In the rest stages,
   // the program to execute would be the program to hack,

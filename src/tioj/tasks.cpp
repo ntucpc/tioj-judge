@@ -163,7 +163,7 @@ struct cjail_result RunExecute(const SubmissionAndResult& sub_and_result, const 
   spdlog::debug("Generating execute settings: id={} subid={}, subtask={} stage={}",
       id, sub.submission_id, subtask, stage);
   auto& lim = sub.testdata[subtask];
-  const auto lang = (sub.use_hack_stage_layout() && stage > 0) ? sub.hackprog_lang : sub.lang;
+  const auto lang = sub.is_hack_stage(stage) ? sub.hackprog_lang : sub.lang;
   std::string program = ExecuteBoxProgram(-1, -1, -1, lang, true);
 
   SandboxOptions opt;
@@ -265,6 +265,7 @@ struct cjail_result RunScoring(const SubmissionAndResult& sub_and_result, const 
   opt.proc_num = 10;
   opt.fsize = kMaxOutput;
   opt.dirs = {"/usr", "/var/lib", "/lib", "/lib64", "/etc/alternatives", "/bin"};
+  opt.envs.push_back("TMPDIR=" + ScoringBoxTempdir(-1, -1, -1, true).string());
   opt.FilterDirs();
   return SandboxExec(opt);
 }

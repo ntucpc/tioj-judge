@@ -206,6 +206,9 @@ fs::path ScoringBoxMetaFile(long id, int td, int stage, bool inside_box) {
 fs::path ScoringBoxOutput(long id, int td, int stage, bool inside_box) {
   return Workdir(BoxRoot(ScoringBoxPath(id, td, stage), inside_box)) / "output";
 }
+fs::path ScoringBoxTempdir(long id, int td, int stage, bool inside_box) {
+  return BoxRoot(ScoringBoxPath(id, td, stage), inside_box) / "tmp";
+}
 
 fs::path SummaryBoxPath(long id) {
   return SubmissionRunPath(id) / "summary";

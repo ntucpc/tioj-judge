@@ -21,6 +21,20 @@ int main(){ puts("0"); })");
   RunAndTeardownSubmission(id);
 }
 
+TEST_F(ExampleProblem, SpecjudgeOldProblemTempdir) {
+  SetUp(2, 3, 2);
+  AssertVerdictReporter reporter(Verdict::AC);
+  sub.reporter = reporter.GetReporter();
+  sub.judge_between_stages = true;
+  long id = SetupSubmission(sub, 5, Compiler::GCC_CPP_17, kTime, true, R"(#include <cstdio>
+int main(){ puts("what"); })", SpecjudgeType::SPECJUDGE_OLD, R"(#include <cstdio>
+#include <fstream>
+int main(){
+  if (std::ofstream(getenv("TMPDIR") + std::string("/test.txt")) << '\n') puts("0");
+})");
+  RunAndTeardownSubmission(id);
+}
+
 TEST_F(ExampleProblem, SpecjudgeOldSetResult) {
   SetUp(2, 3, 2);
   AssertVerdictReporter reporter(Verdict::TLE);
@@ -107,10 +121,11 @@ int main(int argc, char**argv){
   std::ifstream fin(argv[1]); nlohmann::json data; fin >> data;
   int stage = data["current_stage"].get<int>();
   if (stage == 2) {
-    int a, b;
+    int a = 0, b = 0, c = 0;
     std::ifstream(data["user_output_file"].get<std::string>()) >> a;
     std::ifstream(data["answer_file"].get<std::string>()) >> b;
-    if (a-stage-1 == b) {
+    std::ifstream(data["tempdir"].get<std::string>() + "/test.txt") >> c;
+    if (a-stage-1 == b && c == 123) {
       std::cout << nlohmann::json{{"verdict", "AC"}};
     }
   } else {
@@ -118,6 +133,9 @@ int main(int argc, char**argv){
     std::ifstream(data["user_output_file"].get<std::string>()) >> a;
     std::ofstream(data["user_output_file"].get<std::string>()) << (a - stage-1);
     if (stage == 1) std::cout << nlohmann::json{{"verdict", ""}};
+    if (stage == 0) {
+      std::ofstream(data["tempdir"].get<std::string>() + "/test.txt") << "123\n";
+    }
   }
 }
 )");
