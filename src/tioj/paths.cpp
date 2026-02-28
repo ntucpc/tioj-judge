@@ -70,6 +70,8 @@ inline std::string CompileCodeName(CompileSubtask subtask, Compiler lang) {
       return "judge" + extension;
     case CompileSubtask::SUMMARY:
       return "summary" + extension;
+    case CompileSubtask::PROBPROG:
+      return "prob_prog" + extension;
   }
   __builtin_unreachable();
 }
@@ -84,6 +86,8 @@ inline std::string CompileResultName(CompileSubtask subtask, Compiler lang) {
       return "judge" + extension;
     case CompileSubtask::SUMMARY:
       return "summary" + extension;
+    case CompileSubtask::PROBPROG:
+      return "prob_prog" + extension;
   }
   __builtin_unreachable();
 }
@@ -205,6 +209,9 @@ fs::path ScoringBoxMetaFile(long id, int td, int stage, bool inside_box) {
 fs::path ScoringBoxOutput(long id, int td, int stage, bool inside_box) {
   return Workdir(BoxRoot(ScoringBoxPath(id, td, stage), inside_box)) / "output";
 }
+fs::path ScoringBoxTempdir(long id, int td, int stage, bool inside_box) {
+  return BoxRoot(ScoringBoxPath(id, td, stage), inside_box) / "tmp";
+}
 
 fs::path SummaryBoxPath(long id) {
   return SubmissionRunPath(id) / "summary";
@@ -243,6 +250,9 @@ fs::path SubmissionCodePath(int id) {
 }
 fs::path SubmissionUserCode(int id) {
   return SubmissionCodePath(id) / "prog";
+}
+fs::path SubmissionProblemProgCode(int id) {
+  return SubmissionCodePath(id) / "prob_prog";
 }
 fs::path SubmissionJudgeCode(int id) {
   return SubmissionCodePath(id) / "judge";
