@@ -49,6 +49,7 @@ std::vector<std::string> ExecuteCommand(Compiler lang, const std::string& progra
     case Compiler::GCC_C_99: [[fallthrough]];
     case Compiler::GCC_C_11: [[fallthrough]];
     case Compiler::GCC_C_17: [[fallthrough]];
+    case Compiler::RUST: [[fallthrough]];
     case Compiler::HASKELL: return {program};
     case Compiler::PYTHON2: return {"/usr/bin/env", "python2", program};
     case Compiler::PYTHON3: return {"/usr/bin/env", "python3", program};
@@ -128,6 +129,8 @@ struct cjail_result RunCompile(const SubmissionAndResult& sub_and_result, const 
     case Compiler::GCC_C_11: [[fallthrough]];
     case Compiler::GCC_C_17:
       opt.command = GccCompileCommand(lang, input, interlib, output, sub.sandbox_strict); break;
+    case Compiler::RUST:
+      opt.command = {"/usr/bin/env", "TMPDIR=.", "rustc", input, "-O", "-o", output}; break;
     case Compiler::HASKELL: {
       opt.command = {"/usr/bin/env", "ghc", "-w", "-O", "-tmpdir", ".", "-o", output, input};
       if (sub.sandbox_strict) {
