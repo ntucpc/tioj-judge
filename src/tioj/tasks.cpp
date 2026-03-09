@@ -211,8 +211,9 @@ struct cjail_result RunExecute(const SubmissionAndResult& sub_and_result, const 
   opt.fsize = lim.output;
   if (opt.fsize == 0 || opt.fsize > kMaxOutput) opt.fsize = kMaxOutput;
   if (sub.sandbox_strict) {
-    if (lang == Compiler::PYTHON2 || lang == Compiler::PYTHON3) {
+    if (lang == Compiler::PYTHON2 || lang == Compiler::PYTHON3 || lang == Compiler::RUST) {
       // TODO: is it possible to run without /usr/bin and /bin? (maybe copy python executable to workdir)
+      // TODO: make rust static linking in strict mode
       opt.dirs = {"/usr", "/lib", "/lib64", "/etc/alternatives", "/bin"};
     }
     int fd_input = open(ExecuteBoxInput(id, subtask, stage, sub.sandbox_strict).c_str(), O_RDONLY);
