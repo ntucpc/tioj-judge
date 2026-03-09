@@ -53,12 +53,3 @@ int main(){ int a; scanf("%d",&a);printf("%d",a); })"},
     ParamName);
 
 // TODO: multiple submission rejudge
-/*
-struct SubParam {
-  int sub_id;
-  int parallel;
-  bool is_strict;
-  Compiler lang;
-  std::string code;
-};
-*/

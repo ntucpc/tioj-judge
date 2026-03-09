@@ -150,7 +150,7 @@ fs::perms ExecuteBoxProgramPerm(Compiler lang, bool strict) {
     case Compiler::GCC_C_17:
       return fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec; // 711
     case Compiler::RUST:
-      return fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec; // 755
+      return fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec; // 711
     case Compiler::HASKELL:
       return fs::perms::owner_all | fs::perms::group_exec | fs::perms::others_exec; // 711
     case Compiler::PYTHON2: [[fallthrough]];
