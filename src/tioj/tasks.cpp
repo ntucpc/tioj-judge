@@ -130,7 +130,7 @@ struct cjail_result RunCompile(const SubmissionAndResult& sub_and_result, const 
     case Compiler::GCC_C_17:
       opt.command = GccCompileCommand(lang, input, interlib, output, sub.sandbox_strict); break;
     case Compiler::RUSTC_RUST_2021:
-      opt.command = {"/usr/bin/env", "TMPDIR=.", "rustc", input, "-O", "--edition", "2021", "-o", output}; break;
+      opt.command = {"/usr/bin/env", "TMPDIR=.", "rustc", input, "-O", "--edition=2021", "-o", output}; break;
     case Compiler::HASKELL: {
       opt.command = {"/usr/bin/env", "ghc", "-w", "-O", "-tmpdir", ".", "-o", output, input};
       if (sub.sandbox_strict) {
