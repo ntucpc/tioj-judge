@@ -51,6 +51,7 @@ std::vector<std::string> ExecuteCommand(Compiler lang, const std::string& progra
     case Compiler::GCC_C_99: [[fallthrough]];
     case Compiler::GCC_C_11: [[fallthrough]];
     case Compiler::GCC_C_17: [[fallthrough]];
+    case Compiler::RUSTC_RUST_2021: [[fallthrough]];
     case Compiler::HASKELL: return {program};
     case Compiler::PYTHON2: return {"/usr/bin/env", "python2", program};
     case Compiler::PYTHON3: return {"/usr/bin/env", "python3", program};
@@ -131,6 +132,8 @@ struct cjail_result RunCompile(const SubmissionAndResult& sub_and_result, const 
     case Compiler::GCC_C_11: [[fallthrough]];
     case Compiler::GCC_C_17:
       opt.command = GccCompileCommand(lang, input, interlib, output, sub.sandbox_strict); break;
+    case Compiler::RUSTC_RUST_2021:
+      opt.command = {"/usr/bin/env", "TMPDIR=.", "rustc", input, "-O", "--edition=2021", "-o", output}; break;
     case Compiler::HASKELL: {
       opt.command = {"/usr/bin/env", "ghc", "-w", "-O", "-tmpdir", ".", "-o", output, input};
       if (sub.sandbox_strict) {
@@ -211,8 +214,9 @@ struct cjail_result RunExecute(const SubmissionAndResult& sub_and_result, const 
   opt.fsize = lim.output;
   if (opt.fsize == 0 || opt.fsize > kMaxOutput) opt.fsize = kMaxOutput;
   if (sub.sandbox_strict) {
-    if (lang == Compiler::PYTHON2 || lang == Compiler::PYTHON3) {
+    if (lang == Compiler::PYTHON2 || lang == Compiler::PYTHON3 || lang == Compiler::RUSTC_RUST_2021) {
       // TODO: is it possible to run without /usr/bin and /bin? (maybe copy python executable to workdir)
+      // TODO: make rust static linking in strict mode
       opt.dirs = {"/usr", "/lib", "/lib64", "/etc/alternatives", "/bin"};
     }
     int fd_input = open(ExecuteBoxInput(id, subtask, stage, sub.sandbox_strict).c_str(), O_RDONLY);
