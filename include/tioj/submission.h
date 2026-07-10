@@ -1,11 +1,11 @@
 #ifndef INCLUDE_TIOJ_SUBMISSION_H_
 #define INCLUDE_TIOJ_SUBMISSION_H_
 
+#include <filesystem>
+#include <functional>
 #include <set>
 #include <string>
 #include <vector>
-#include <filesystem>
-#include <functional>
 
 #include <cjail/cjail.h>
 
@@ -21,6 +21,8 @@ extern double kTimeMultiplier;
   X(NORMAL) \
   X(SPECJUDGE_OLD) \
   X(SPECJUDGE_NEW) \
+  X(SPECJUDGE_POLYGON) \
+  X(SPECJUDGE_KATTIS) \
   X(SKIP) // should be the last one
 enum class SpecjudgeType {
 #define X(name) name,
@@ -79,18 +81,18 @@ enum class Compiler {
   X(OLE, "OLE", "Output Limit Exceeded") \
   X(RE, "RE", "Runtime Error (exited with nonzero status)") \
   X(SIG, "SIG", "Runtime Error (exited with signal)") \
+  X(JRE, "JRE", "Judge Runtime Error") \
   X(EE, "EE", "Execution Error") \
   /* verdicts after compilation */ \
   X(CE, "CE", "Compile Error") \
   X(CLE, "CLE", "Compilation Limit Exceeded") \
-  X(ER, "ER", "Judge Compilation Error") \
+  X(JCE, "JCE", "Judge Compilation Error") \
   X(JE, "JE", "Judge Error")
 enum class Verdict {
 #define X(name, abr, desc) name,
   ENUM_VERDICT_
 #undef X
 };
-
 
 class SubmissionResult;
 
@@ -121,6 +123,8 @@ class Submission {
   std::set<int> problem_prog_stages;
   bool judge_between_stages;
   bool judge_abnormally_terminated;
+  // replace specjudge RE with WA instead of JRE (summary RE is always JRE)
+  bool specjudge_re_as_wa;
   bool sandbox_strict; // false for backward-compatability
   int process_limit;
   std::vector<std::string> default_scoring_args;
@@ -131,49 +135,52 @@ class Submission {
     std::filesystem::path input_file, answer_file;
     // limits
     // vss & rss & output can be zero if unlimited; time must always be set
-    int64_t vss, rss, output; // KiB
-    int64_t time; // us
-    bool ignore_verdict; // ignore this testdata in overall verdict calculation
+    int64_t vss, rss, output;   // KiB
+    int64_t time;               // us
+    bool ignore_verdict;        // ignore this testdata in overall verdict calculation
     std::vector<int> td_groups; // which groups it belongs to
   };
   std::vector<TestdataItem> testdata;
   std::vector<int64_t> group_score; // 10^(-6)
-  bool skip_group; // skip a group of testdata if any of them got non-AC
+  bool skip_group;                  // skip a group of testdata if any of them got non-AC
 
   // judge behavior
   struct Reporter {
     // these functions should not block
     std::function<void(const Submission&, const SubmissionResult&)> ReportStartCompiling;
     std::function<void(const Submission&, const SubmissionResult&)> ReportOverallResult;
-    std::function<void(const Submission&, const SubmissionResult&, int subtask, int stage)> ReportScoringResult;
+    std::function<void(const Submission&, const SubmissionResult&, int subtask, int stage)>
+        ReportScoringResult;
     std::function<void(const Submission&, const SubmissionResult&)> ReportCEMessage;
-    std::function<void(const Submission&, const SubmissionResult&)> ReportERMessage;
-    std::function<void(const Submission&, const SubmissionResult&, size_t queue_size_before_pop)> ReportFinalized;
+    std::function<void(const Submission&, const SubmissionResult&)> ReportJCEMessage;
+    std::function<void(const Submission&, const SubmissionResult&, size_t queue_size_before_pop)>
+        ReportFinalized;
   };
-  Reporter reporter; // callbacks for result reporting
+  Reporter reporter;              // callbacks for result reporting
   bool report_intermediate_stage; // whether to call ReportScoringResult in intermediate stages
-  bool remove_submission; // remove submission code after judge
+  bool remove_submission;         // remove submission code after judge
 
-  Submission() :
-      submission_id(0),
-      contest_id(0),
-      submission_time(0),
-      submitter_id(0),
-      lang(Compiler::GCC_CPP_17),
-      problem_id(0),
-      specjudge_type(SpecjudgeType::NORMAL),
-      interlib_type(InterlibType::NONE),
-      summary_type(SummaryType::NONE),
-      specjudge_lang(Compiler::GCC_CPP_17),
-      summary_lang(Compiler::GCC_CPP_17),
-      problem_prog_lang(Compiler::GCC_CPP_17),
-      stages(1),
-      judge_between_stages(false),
-      judge_abnormally_terminated(false),
-      sandbox_strict(false),
-      process_limit(1),
-      report_intermediate_stage(false),
-      remove_submission(true) {}
+  Submission()
+      : submission_id(0),
+        contest_id(0),
+        submission_time(0),
+        submitter_id(0),
+        lang(Compiler::GCC_CPP_17),
+        problem_id(0),
+        specjudge_type(SpecjudgeType::NORMAL),
+        interlib_type(InterlibType::NONE),
+        summary_type(SummaryType::NONE),
+        specjudge_lang(Compiler::GCC_CPP_17),
+        summary_lang(Compiler::GCC_CPP_17),
+        problem_prog_lang(Compiler::GCC_CPP_17),
+        stages(1),
+        judge_between_stages(false),
+        judge_abnormally_terminated(false),
+        specjudge_re_as_wa(true),
+        sandbox_strict(false),
+        process_limit(1),
+        report_intermediate_stage(false),
+        remove_submission(true) {}
 };
 
 class SubmissionResult {
@@ -182,21 +189,20 @@ class SubmissionResult {
   struct TestdataResult {
     struct cjail_result execute_result;
     int64_t vss, rss; // KiB
-    int64_t time; // us
-    int64_t score; // 10^(-6)
+    int64_t time;     // us
+    int64_t score;    // 10^(-6)
     Verdict verdict;
     std::string message_type, message;
     // TODO: Internal state passing
     bool skip_stage;
-    TestdataResult() :
-        execute_result{}, vss{}, rss{}, time{}, score{}, verdict(Verdict::NUL),
-        skip_stage(false) {}
+    TestdataResult()
+        : execute_result{}, vss{}, rss{}, time{}, score{}, verdict(Verdict::NUL), skip_stage(false) {}
   };
   std::vector<TestdataResult> td_results;
   // overall result
   Verdict verdict;
   int64_t total_memory, total_time, total_score; // KiB, us, 10^(-6)
-  std::string ce_message, er_message;
+  std::string ce_message, jce_message;
 
   SubmissionResult() : verdict(Verdict::NUL), total_memory(0), total_time(0), total_score(0) {}
 };
@@ -213,4 +219,4 @@ std::vector<int> GetQueuedSubmissionID();
 // 0 = no limit; return false only if queue size exceeded
 bool PushSubmission(Submission&&, size_t max_queue = 0);
 
-#endif  // INCLUDE_TIOJ_SUBMISSION_H_
+#endif // INCLUDE_TIOJ_SUBMISSION_H_

@@ -33,61 +33,46 @@ set(TIOJ_DATA_DIR "/var/lib/tioj-judge/" CACHE PATH "Path of default testdata & 
 add_compile_definitions(TIOJ_DATA_DIR="${TIOJ_DATA_DIR}")
 
 # setup dependencies
+execute_process(
+  COMMAND git submodule update --init --recursive --depth 1
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(CJAIL_BUILD_CLI OFF)
 set(CJAIL_BUILD_TESTS OFF)
 set(HTTPLIB_REQUIRE_OPENSSL ON)
 set(HTTPLIB_REQUIRE_ZLIB ON)
 set(HTTPLIB_COMPILE ON)
+set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF)
 set(JSON_MultipleHeaders ON)
 set(JSON_Install ON)
 set(BUILD_TESTING OFF) # for tortellini
 
 include(FetchContentExclude)
 FetchContent_Declare(
-  cjail
-  GIT_REPOSITORY "https://github.com/adrien1018/cjail.git"
-  GIT_TAG "66319a18ab0c23af11e69e042a2e9bd978789962"
-)
-FetchContent_Declare(
   spdlog
-  URL "https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.zip"
-)
-FetchContent_Declare(
-  json
-  URL "https://github.com/nlohmann/json/archive/refs/tags/v3.11.2.zip"
-)
-FetchContent_Declare(
-  ini
-  GIT_REPOSITORY "https://github.com/Qix-/tortellini.git"
-  GIT_TAG "0c9a2b79f6580d44bd7606f30668a5e0ba8326ae"
-)
-FetchContent_Declare(
-  httplib
-  URL "https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.12.0.zip"
-)
-FetchContent_Declare(
-  websocketpp
-  URL "https://github.com/zaphoyd/websocketpp/archive/refs/tags/0.8.2.zip"
-)
-FetchContent_Declare(
-  sqlite_orm
-  URL "https://github.com/fnc12/sqlite_orm/archive/refs/tags/v1.8.1.zip"
-)
-FetchContent_Declare(
-  argparse
-  URL "https://github.com/p-ranav/argparse/archive/refs/tags/v2.9.zip"
+  URL "https://github.com/gabime/spdlog/archive/refs/tags/v1.17.0.zip"
 )
 
 if(TIOJ_INSTALL_LIBTIOJ AND TIOJ_INSTALL_DEPENDENCIES)
-  FetchContent_MakeAvailable_Include(cjail json)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libs/cjail)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libs/json)
 else()
-  FetchContent_MakeAvailable_Exclude(cjail json)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libs/cjail EXCLUDE_FROM_ALL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libs/json EXCLUDE_FROM_ALL)
 endif()
 
 find_package(OpenSSL REQUIRED)
 find_package(zstd REQUIRED)
-FetchContent_MakeAvailable_Exclude(spdlog ini httplib websocketpp sqlite_orm argparse)
+FetchContent_MakeAvailable_Exclude(spdlog)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libs/argparse EXCLUDE_FROM_ALL)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libs/cpp-httplib EXCLUDE_FROM_ALL)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libs/sqlite_orm EXCLUDE_FROM_ALL)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libs/tortellini EXCLUDE_FROM_ALL)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/libs/websocketpp)
+
+find_library(JITTERENTROPY_LIB NAMES jitterentropy)
 
 # detect Haskell version
 find_program(HASKELL_EXECUTABLE ghc)
@@ -121,8 +106,14 @@ install(TARGETS sandbox-exec DESTINATION "${TIOJ_DATA_DIR}/")
 # headers for judge
 file(DOWNLOAD "https://raw.githubusercontent.com/nlohmann/json/v3.10.5/single_include/nlohmann/json.hpp"
   "${PROJECT_BINARY_DIR}/judge-headers/nlohmann/json.hpp")
-file(DOWNLOAD "https://raw.githubusercontent.com/MikeMirzayanov/testlib/6daa79fdc9c2b113be8d40f828e3dc81e67ce33d/testlib.h"
+file(DOWNLOAD "https://raw.githubusercontent.com/MikeMirzayanov/testlib/1e4e8a24c79c6bad3becbdb5a332ffc352b7d5dd/testlib.h"
   "${PROJECT_BINARY_DIR}/judge-headers/testlib.h")
+file(DOWNLOAD "https://raw.githubusercontent.com/Kattis/problemtools/refs/tags/v1.20260620/examples/different/output_validators/different_validator/validate.h"
+  "${PROJECT_BINARY_DIR}/judge-headers/validate.h")
+execute_process(COMMAND
+  patch "${PROJECT_BINARY_DIR}/judge-headers/testlib.h"
+  -i "${CMAKE_CURRENT_SOURCE_DIR}/patches/tioj_testlib.patch"
+  -o "${PROJECT_BINARY_DIR}/judge-headers/tioj_testlib.h")
 install(DIRECTORY "${PROJECT_BINARY_DIR}/judge-headers" DESTINATION "${TIOJ_DATA_DIR}")
 
 # library
@@ -135,24 +126,34 @@ add_executable(tioj-judge ${JUDGE_SRC})
 target_compile_definitions(tioj-judge PRIVATE HASKELL_PROCESS_LIMIT=${HASKELL_PROCESS_LIMIT})
 target_link_libraries(
     tioj-judge libtioj spdlog::spdlog tortellini
-    httplib::httplib websocketpp ${OPENSSL_LIBRARIES} zstd
+    httplib::httplib ${OPENSSL_LIBRARIES} zstd
     sqlite_orm::sqlite_orm argparse::argparse)
+if(JITTERENTROPY_LIB)
+  target_link_libraries(tioj-judge jitterentropy)
+endif()
 install(TARGETS tioj-judge DESTINATION bin)
 
 # testing
 if(TIOJ_BUILD_TESTS)
   enable_testing()
-  FetchContent_Declare(
-    googletest
-    URL "https://github.com/google/googletest/archive/refs/tags/release-1.11.0.zip"
-  )
   set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  FetchContent_MakeAvailable_Exclude(googletest)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/libs/googletest EXCLUDE_FROM_ALL)
 
   file(GLOB TEST_SRC "test/*.cpp" "test/*.h")
   add_executable(judge-test ${TEST_SRC})
+  target_compile_definitions(judge-test PRIVATE HASKELL_PROCESS_LIMIT=${HASKELL_PROCESS_LIMIT})
   target_link_libraries(judge-test gtest_main libtioj spdlog::spdlog)
 
   include(GoogleTest)
   gtest_discover_tests(judge-test DISCOVERY_MODE PRE_TEST)
 endif()
+
+# Formatting
+file(GLOB_RECURSE ALL_SRC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*.cpp" "*.h")
+list(FILTER ALL_SRC EXCLUDE REGEX "^libs/")
+list(FILTER ALL_SRC EXCLUDE REGEX "^build/")
+add_custom_target(format
+  COMMAND clang-format -i ${ALL_SRC}
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  COMMENT "Formatting all source files"
+)

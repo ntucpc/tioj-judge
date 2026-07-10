@@ -1,24 +1,24 @@
 #include "submission.h"
 
-#include <unistd.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <condition_variable>
+#include <fstream>
 #include <mutex>
 #include <queue>
 #include <regex>
-#include <fstream>
-#include <unordered_set>
 #include <unordered_map>
-#include <condition_variable>
+#include <unordered_set>
 
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
+#include "paths.h"
 #include "tasks.h"
 #include "utils.h"
-#include "paths.h"
 
 int kMaxParallel = 1;
 cpu_set_t kPinnedCpus = {};
-long kMaxRSS = 2 * 1024 * 1024; // 2G
+long kMaxRSS = 2 * 1024 * 1024;    // 2G
 long kMaxOutput = 1 * 1024 * 1024; // 1G
 double kTimeMultiplier = 1.0;
 
@@ -41,39 +41,41 @@ nlohmann::json SubmissionAndResult::TestdataMeta(int subtask, int stage) const {
   const SubmissionResult::TestdataResult& td_result = result.td_results[subtask];
   const struct cjail_result& res = td_result.execute_result;
   return {
-    {"input_file", ScoringBoxTdInput(-1, -1, -1, true)},
-    {"answer_file", ScoringBoxTdOutput(-1, -1, -1, true)},
-    {"user_output_file", ScoringBoxUserOutput(-1, -1, -1, true)},
-    {"user_code_file", ScoringBoxUserCode(-1, -1, -1, sub.lang, true)},
-    {"problem_id", sub.problem_id},
-    {"contest_id", sub.contest_id},
-    {"submission_id", sub.submission_id},
-    {"submitter_id", sub.submitter_id},
-    {"submitter_name", sub.submitter_name},
-    {"submitter_nickname", sub.submitter_nickname},
-    {"submission_time", sub.submission_time},
-    {"compiler", CompilerName(sub.lang)},
-    {"testdata_index", subtask},
-    {"current_stage", stage},
-    {"original_verdict", VerdictToAbr(td_result.verdict)},
-    {"current_time_us", td_result.time},
-    {"message_type", td_result.message_type},
-    {"message", td_result.message},
-    {"tempdir", ScoringBoxTempdir(-1, -1, -1, true)},
-    {"limits", {
-      {"time_us", lim.time},
-      {"vss_kib", lim.vss},
-      {"rss_kib", lim.rss},
-      {"output_kib", lim.output},
-    }},
-    {"stats", {
-      {"exit_code", res.info.si_status},
-      {"real_us", ToUs(res.time)},
-      {"user_us", ToUs(res.rus.ru_utime)},
-      {"sys_us", ToUs(res.rus.ru_stime)},
-      {"max_rss_kib", res.rus.ru_maxrss},
-      {"max_vss_kib", res.stats.hiwater_vm},
-    }},
+      {"input_file", ScoringBoxTdInput(-1, -1, -1, true)},
+      {"answer_file", ScoringBoxTdOutput(-1, -1, -1, true)},
+      {"user_output_file", ScoringBoxUserOutput(-1, -1, -1, true)},
+      {"user_code_file", ScoringBoxUserCode(-1, -1, -1, sub.lang, true)},
+      {"problem_id", sub.problem_id},
+      {"contest_id", sub.contest_id},
+      {"submission_id", sub.submission_id},
+      {"submitter_id", sub.submitter_id},
+      {"submitter_name", sub.submitter_name},
+      {"submitter_nickname", sub.submitter_nickname},
+      {"submission_time", sub.submission_time},
+      {"compiler", CompilerName(sub.lang)},
+      {"testdata_index", subtask},
+      {"current_stage", stage},
+      {"original_verdict", VerdictToAbr(td_result.verdict)},
+      {"current_time_us", td_result.time},
+      {"message_type", td_result.message_type},
+      {"message", td_result.message},
+      {"tempdir", ScoringBoxTempdir(-1, -1, -1, true)},
+      {"limits",
+       {
+           {"time_us", lim.time},
+           {"vss_kib", lim.vss},
+           {"rss_kib", lim.rss},
+           {"output_kib", lim.output},
+       }},
+      {"stats",
+       {
+           {"exit_code", res.info.si_status},
+           {"real_us", ToUs(res.time)},
+           {"user_us", ToUs(res.rus.ru_utime)},
+           {"sys_us", ToUs(res.rus.ru_stime)},
+           {"max_rss_kib", res.rus.ru_maxrss},
+           {"max_vss_kib", res.stats.hiwater_vm},
+       }},
   };
 }
 
@@ -82,15 +84,15 @@ nlohmann::json SubmissionAndResult::SummaryMeta() const {
   for (size_t i = 0; i < result.td_results.size(); i++) {
     const auto& td_result = result.td_results[i];
     testdata.push_back({
-      {"verdict", VerdictToAbr(td_result.verdict)},
-      {"score", ScoreToString(td_result.score)},
-      {"time_us", td_result.time},
-      {"vss_kib", td_result.vss},
-      {"rss_kib", td_result.rss},
-      {"message_type", td_result.message_type},
-      {"message", td_result.message},
-      {"ignore_verdict", sub.testdata[i].ignore_verdict},
-      {"subtasks", sub.testdata[i].td_groups},
+        {"verdict", VerdictToAbr(td_result.verdict)},
+        {"score", ScoreToString(td_result.score)},
+        {"time_us", td_result.time},
+        {"vss_kib", td_result.vss},
+        {"rss_kib", td_result.rss},
+        {"message_type", td_result.message_type},
+        {"message", td_result.message},
+        {"ignore_verdict", sub.testdata[i].ignore_verdict},
+        {"subtasks", sub.testdata[i].td_groups},
     });
   }
   nlohmann::json subtask_scores = nlohmann::json::array();
@@ -98,20 +100,20 @@ nlohmann::json SubmissionAndResult::SummaryMeta() const {
     subtask_scores.push_back(ScoreToString(score));
   }
   return {
-    {"user_code_file", SummaryBoxUserCode(-1, sub.lang, true)},
-    {"problem_id", sub.problem_id},
-    {"contest_id", sub.contest_id},
-    {"submission_id", sub.submission_id},
-    {"submitter_id", sub.submitter_id},
-    {"submitter_name", sub.submitter_name},
-    {"submitter_nickname", sub.submitter_nickname},
-    {"submission_time", sub.submission_time},
-    {"compiler", CompilerName(sub.lang)},
-    {"ce_message", result.ce_message},
-    {"ce_message_file", SummaryBoxCEMessage(-1, true)},
-    {"verdict", VerdictToAbr(result.verdict)},
-    {"testdata", testdata},
-    {"subtask_scores", subtask_scores},
+      {"user_code_file", SummaryBoxUserCode(-1, sub.lang, true)},
+      {"problem_id", sub.problem_id},
+      {"contest_id", sub.contest_id},
+      {"submission_id", sub.submission_id},
+      {"submitter_id", sub.submitter_id},
+      {"submitter_name", sub.submitter_name},
+      {"submitter_nickname", sub.submitter_nickname},
+      {"submission_time", sub.submission_time},
+      {"compiler", CompilerName(sub.lang)},
+      {"ce_message", result.ce_message},
+      {"ce_message_file", SummaryBoxCEMessage(-1, true)},
+      {"verdict", VerdictToAbr(result.verdict)},
+      {"testdata", testdata},
+      {"subtask_scores", subtask_scores},
   };
 }
 
@@ -142,11 +144,13 @@ struct TaskEntry {
   std::vector<long> edges;
 
   TaskEntry() {}
-  TaskEntry(int sub_id, const Task& task, long priority, int order = 0) :
-      id(task_count++),
-      submission_internal_id(sub_id),
-      task(task), priority(priority),
-      task_order(order), indeg(0) {}
+  TaskEntry(int sub_id, const Task& task, long priority, int order = 0)
+      : id(task_count++),
+        submission_internal_id(sub_id),
+        task(task),
+        priority(priority),
+        task_order(order),
+        indeg(0) {}
   bool operator<(const TaskEntry& x) const {
     return std::make_tuple(priority, -submission_internal_id, -task_order) <
            std::make_tuple(x.priority, -x.submission_internal_id, -x.task_order);
@@ -159,9 +163,7 @@ std::condition_variable task_cv;
 std::unordered_map<long, TaskEntry> task_list;
 
 struct PriorityCompare {
-  bool operator()(long a, long b) {
-    return task_list[a] < task_list[b];
-  }
+  bool operator()(long a, long b) { return task_list[a] < task_list[b]; }
 };
 
 std::priority_queue<long, std::vector<long>, PriorityCompare> task_queue;
@@ -276,13 +278,13 @@ bool SetupCompile(const SubmissionAndResult& sub_and_result, const TaskEntry& ta
   return true;
 }
 
-void FinalizeCompile(SubmissionAndResult& sub_and_result, const TaskEntry& task, const struct cjail_result& cjail_res) {
+void FinalizeCompile(SubmissionAndResult& sub_and_result, const TaskEntry& task,
+                     const struct cjail_result& cjail_res) {
   const Submission& sub = sub_and_result.sub;
   SubmissionResult& sub_res = sub_and_result.result;
 
   constexpr size_t kMaxMsgLen = 4000;
-  static const std::regex kFilterRegex(
-      "(^|\\n)In file included from[\\S\\s]*?(\\n/workdir/prog|$)");
+  static const std::regex kFilterRegex("(^|\\n)In file included from[\\S\\s]*?(\\n/workdir/prog|$)");
   static const std::string kFilterReplace = "$1[Error messages from headers removed]$2";
 
   long id = sub.submission_internal_id;
@@ -291,18 +293,18 @@ void FinalizeCompile(SubmissionAndResult& sub_and_result, const TaskEntry& task,
   if (cjail_res.timekill == -1) {
     sub_res.verdict = Verdict::JE;
   } else if (cjail_res.timekill || cjail_res.oomkill > 0 || cjail_res.info.si_status != 0 ||
-      !fs::is_regular_file(CompileBoxOutput(id, subtask, lang))) {
+             !fs::is_regular_file(CompileBoxOutput(id, subtask, lang))) {
     Verdict verd;
     if (subtask != CompileSubtask::USERPROG) {
-      verd = Verdict::ER;
+      verd = Verdict::JCE;
     } else if (cjail_res.timekill || cjail_res.oomkill > 0) {
       verd = Verdict::CLE;
     } else {
       verd = Verdict::CE;
     }
     sub_res.verdict = std::max(sub_res.verdict, verd);
-    spdlog::info("Compilation failed: id={} subtask={} verdict={}",
-                 id, CompileSubtaskName(subtask), VerdictToAbr(sub_res.verdict));
+    spdlog::info("Compilation failed: id={} subtask={} verdict={}", id, CompileSubtaskName(subtask),
+                 VerdictToAbr(sub_res.verdict));
 
     fs::path path = CompileBoxMessage(id, subtask);
     std::string message;
@@ -327,12 +329,12 @@ void FinalizeCompile(SubmissionAndResult& sub_and_result, const TaskEntry& task,
       }
       case CompileSubtask::PROBPROG: [[fallthrough]];
       case CompileSubtask::SPECJUDGE: {
-        sub_res.er_message = std::move(message);
-        if (sub.reporter.ReportERMessage) sub.reporter.ReportERMessage(sub, sub_res);
+        sub_res.jce_message = std::move(message);
+        if (sub.reporter.ReportJCEMessage) sub.reporter.ReportJCEMessage(sub, sub_res);
         break;
       }
       case CompileSubtask::SUMMARY: {
-        if (sub_res.er_message.empty()) sub_res.er_message = std::move(message);
+        if (sub_res.jce_message.empty()) sub_res.jce_message = std::move(message);
         // do nothing
         break;
       }
@@ -361,25 +363,23 @@ bool SetupExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
   bool is_problem_prog_stage = sub.problem_prog_stages.count(stage);
   if (!sub.sandbox_strict) { // for non-strict: mount a tmpfs to limit overall filesize
     // TODO FEATURE(io-interactive): create FIFOs outside of workdir by hardlink
-    auto compiled =
-      is_problem_prog_stage 
-      ? CompileBoxOutput(id, CompileSubtask::PROBPROG, sub.problem_prog_lang)
-      : CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang);
-    long tmpfs_size_kib =
-      (fs::file_size(compiled) / 4096 + 1) * 4 +
-      (fs::file_size(sub.testdata[subtask].input_file) / 4096 + 1) * 4 +
-      std::min(sub.testdata[subtask].output * 2, kMaxOutput);
+    auto compiled = is_problem_prog_stage
+                        ? CompileBoxOutput(id, CompileSubtask::PROBPROG, sub.problem_prog_lang)
+                        : CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang);
+    long tmpfs_size_kib = (fs::file_size(compiled) / 4096 + 1) * 4 +
+                          (fs::file_size(sub.testdata[subtask].input_file) / 4096 + 1) * 4 +
+                          std::min(sub.testdata[subtask].output * 2, kMaxOutput);
     MountTmpfs(workdir, tmpfs_size_kib);
   }
 
   if (is_problem_prog_stage) {
     auto prog = ExecuteBoxProgram(id, subtask, stage, sub.problem_prog_lang);
-    Copy(CompileBoxOutput(id, CompileSubtask::PROBPROG, sub.problem_prog_lang),
-         prog, ExecuteBoxProgramPerm(sub.problem_prog_lang, sub.sandbox_strict));
+    Copy(CompileBoxOutput(id, CompileSubtask::PROBPROG, sub.problem_prog_lang), prog,
+         ExecuteBoxProgramPerm(sub.problem_prog_lang, sub.sandbox_strict));
   } else {
     auto prog = ExecuteBoxProgram(id, subtask, stage, sub.lang);
-    Copy(CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang),
-         prog, ExecuteBoxProgramPerm(sub.lang, sub.sandbox_strict));
+    Copy(CompileBoxOutput(id, CompileSubtask::USERPROG, sub.lang), prog,
+         ExecuteBoxProgramPerm(sub.lang, sub.sandbox_strict));
   }
 
   auto input_file = ExecuteBoxInput(id, subtask, stage, sub.sandbox_strict);
@@ -388,7 +388,7 @@ bool SetupExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
     if (stage == 0) {
       std::lock_guard lck(td_file_lock[sub.problem_id]);
       Copy(sub.testdata[subtask].input_file, input_file,
-          fs::perms::owner_read | fs::perms::owner_write); // 600
+           fs::perms::owner_read | fs::perms::owner_write); // 600
     } else {
       Move(ExecuteBoxFinalOutput(id, subtask, stage - 1), input_file);
       fs::permissions(input_file, fs::perms::owner_read | fs::perms::owner_write); // 600
@@ -406,7 +406,8 @@ bool SetupExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
   return true;
 }
 
-void FinalizeExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task, const struct cjail_result& cjail_res) {
+void FinalizeExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task,
+                     const struct cjail_result& cjail_res) {
   const Submission& sub = sub_and_result.sub;
   SubmissionResult& sub_res = sub_and_result.result;
 
@@ -416,8 +417,7 @@ void FinalizeExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task,
   if (subtask >= (int)sub_res.td_results.size()) sub_res.td_results.resize(subtask + 1);
   auto& td_result = sub_res.td_results[subtask];
   td_result.execute_result = cjail_res;
-  Move(ExecuteBoxOutput(id, subtask, stage, sub.sandbox_strict),
-       ExecuteBoxFinalOutput(id, subtask, stage));
+  Move(ExecuteBoxOutput(id, subtask, stage, sub.sandbox_strict), ExecuteBoxFinalOutput(id, subtask, stage));
   IGNORE_RETURN(chown(ExecuteBoxFinalOutput(id, subtask, stage).c_str(), 0, 0));
   {
     auto workdir = Workdir(ExecuteBoxPath(id, subtask, stage));
@@ -447,7 +447,8 @@ void FinalizeExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task,
   } else if (cjail_res.timekill) {
     td_result.verdict = Verdict::TLE;
   } else if (cjail_res.info.si_code == CLD_KILLED || cjail_res.info.si_code == CLD_DUMPED) {
-    if (cjail_res.info.si_status == SIGXFSZ || (sub.sandbox_strict && cjail_res.info.si_status == SIGPIPE)) {
+    if (cjail_res.info.si_status == SIGXFSZ ||
+        (sub.sandbox_strict && cjail_res.info.si_status == SIGPIPE)) {
       td_result.verdict = Verdict::OLE;
     } else if ((lim.vss && td_result.vss > lim.vss) || (lim.rss && td_result.rss > lim.rss)) {
       // MLE will likely cause SIGSEGV or std::bad_alloc (SIGABRT), so we check it before SIG
@@ -464,9 +465,10 @@ void FinalizeExecute(SubmissionAndResult& sub_and_result, const TaskEntry& task,
   } else {
     td_result.verdict = Verdict::NUL;
   }
-  spdlog::info("Execute finished: id={} subtask={} stage={} code={} status={} verdict={} time={} vss={} rss={}",
-               id, subtask, stage, cjail_res.info.si_code, cjail_res.info.si_status, VerdictToAbr(td_result.verdict),
-               td_result.time, td_result.vss, td_result.rss);
+  spdlog::info(
+      "Execute finished: id={} subtask={} stage={} code={} status={} verdict={} time={} vss={} rss={}", id,
+      subtask, stage, cjail_res.info.si_code, cjail_res.info.si_status, VerdictToAbr(td_result.verdict),
+      td_result.time, td_result.vss, td_result.rss);
 }
 
 void FinalizeScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task,
@@ -492,8 +494,9 @@ bool SetupScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
   }
   CreateDirs(Workdir(ScoringBoxPath(id, subtask, stage)), fs::perms::all);
   // special judge program
-  fs::path specjudge_prog = sub.specjudge_type == SpecjudgeType::NORMAL ?
-      DefaultScoringPath() : CompileBoxOutput(id, CompileSubtask::SPECJUDGE, sub.specjudge_lang);
+  fs::path specjudge_prog = sub.specjudge_type == SpecjudgeType::NORMAL
+                                ? DefaultScoringPath()
+                                : CompileBoxOutput(id, CompileSubtask::SPECJUDGE, sub.specjudge_lang);
   Copy(specjudge_prog, ScoringBoxProgram(id, subtask, stage, sub.specjudge_lang), fs::perms::all);
   // user code
   Copy(SubmissionUserCode(id), ScoringBoxUserCode(id, subtask, stage, sub.lang), kPerm666);
@@ -529,54 +532,69 @@ bool SetupScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
     if (sub.specjudge_type == SpecjudgeType::SPECJUDGE_OLD) {
       fout << sub_and_result.TestdataMetaOld(subtask);
     } else {
-      fout << sub_and_result.TestdataMeta(subtask, stage).dump(-1, ' ', false, nlohmann::json::error_handler_t::ignore);
+      fout << sub_and_result.TestdataMeta(subtask, stage)
+                  .dump(-1, ' ', false, nlohmann::json::error_handler_t::ignore);
     }
   }
   return true;
 }
 
-void ReadOldSpecjudgeResult(const fs::path& output_path, bool last_stage, SubmissionResult::TestdataResult& td_result) {
+constexpr size_t kMaxMessageLen = 32768;
+
+inline void SetACOrContinue(bool last_stage, SubmissionResult::TestdataResult& td_result) {
+  if (last_stage) {
+    td_result.verdict = Verdict::AC;
+    td_result.score = 100'000'000;
+  } // else: continue (NUL)
+}
+
+inline void ParseSpecjudgeOverrides(std::ifstream& fin, SubmissionResult::TestdataResult& td_result,
+                                    bool break_on_non_match, bool allow_score) {
+  bool score_overriden = false;
+  std::string cmd;
+  while (fin >> cmd) {
+    if (allow_score && cmd == "SPECJUDGE_OVERRIDE_SCORE") {
+      long double score;
+      if (fin >> score) {
+        td_result.score = NormalizeScore(score);
+        score_overriden = true;
+      }
+    } else if (cmd == "SPECJUDGE_OVERRIDE_VERDICT") {
+      if (fin >> cmd) {
+        td_result.verdict = AbrToVerdict(cmd, true);
+        if (allow_score && !score_overriden && td_result.verdict == Verdict::AC) {
+          td_result.score = 100'000'000;
+        }
+      }
+    } else if (cmd == "SPECJUDGE_OVERRIDE_TIME_US") {
+      long time_us;
+      if (fin >> time_us) {
+        td_result.time = time_us;
+      }
+    } else if (cmd == "SPECJUDGE_OVERRIDE_VSS_KIB") {
+      long vss_kib;
+      if (fin >> vss_kib) {
+        td_result.vss = vss_kib;
+      }
+    } else if (cmd == "SPECJUDGE_OVERRIDE_RSS_KIB") {
+      long rss_kib;
+      if (fin >> rss_kib) {
+        td_result.rss = rss_kib;
+      }
+    } else if (break_on_non_match) {
+      break;
+    }
+  }
+}
+
+void ReadOldSpecjudgeResult(const fs::path& output_path, bool last_stage,
+                            SubmissionResult::TestdataResult& td_result) {
   int x;
   std::ifstream fin(output_path);
   bool success = bool(fin >> x); // x would be set to 0 if failed, so this is necessary
   if (success && x == 0) {
-    if (last_stage) {
-      td_result.verdict = Verdict::AC;
-      td_result.score = 100'000'000;
-    } // else: continue (NUL)
-    std::string cmd;
-    bool score_overriden = false;
-    while (fin >> cmd) {
-      if (cmd == "SPECJUDGE_OVERRIDE_SCORE") {
-        long double score;
-        if (fin >> score) {
-          td_result.score = NormalizeScore(score);
-          score_overriden = true;
-        }
-      } else if (cmd == "SPECJUDGE_OVERRIDE_VERDICT") {
-        if (fin >> cmd) {
-          td_result.verdict = AbrToVerdict(cmd, true);
-          if (!score_overriden && td_result.verdict == Verdict::AC) td_result.score = 100'000'000;
-        }
-      } else if (cmd == "SPECJUDGE_OVERRIDE_TIME_US") {
-        long time_us;
-        if (fin >> time_us) {
-          td_result.time = time_us;
-        }
-      } else if (cmd == "SPECJUDGE_OVERRIDE_VSS_KIB") {
-        long vss_kib;
-        if (fin >> vss_kib) {
-          td_result.vss = vss_kib;
-        }
-      } else if (cmd == "SPECJUDGE_OVERRIDE_RSS_KIB") {
-        long rss_kib;
-        if (fin >> rss_kib) {
-          td_result.rss = rss_kib;
-        }
-      } else {
-        break;
-      }
-    }
+    SetACOrContinue(last_stage, td_result);
+    ParseSpecjudgeOverrides(fin, td_result, true, true);
   } else {
     td_result.verdict = Verdict::WA;
   }
@@ -599,13 +617,15 @@ void ReadNewSpecjudgeResult(const fs::path& output_path, SubmissionResult::Testd
       } else if (it->is_number()) {
         td_result.score = NormalizeScore(it->get<long double>());
       }
-    } catch (...) {}
+    } catch (...) {
+    }
   }
   auto ReadNumber = [&](const char* attr, long& target) {
     if (auto it = json.find(attr); it != json.end() && it->is_number()) {
       try {
         target = it->get<long>();
-      } catch (...) {}
+      } catch (...) {
+      }
     }
   };
   ReadNumber("time_us", td_result.time);
@@ -613,20 +633,110 @@ void ReadNewSpecjudgeResult(const fs::path& output_path, SubmissionResult::Testd
   ReadNumber("rss_kib", td_result.rss);
   bool has_message = false;
   if (auto it_type = json.find("message_type"), it_msg = json.find("message");
-      it_type != json.end() && it_msg != json.end() &&
-      it_type->is_string() && it_msg->is_string()) {
+      it_type != json.end() && it_msg != json.end() && it_type->is_string() && it_msg->is_string()) {
     try {
       auto& msg_type = it_type->get_ref<std::string&>();
       if (msg_type == "text" || msg_type == "html") {
-        constexpr size_t kMaxLen = 32768;
         td_result.message_type = std::move(msg_type);
         td_result.message = std::move(it_msg->get_ref<std::string&>());
-        if (td_result.message.size() > kMaxLen) td_result.message.resize(kMaxLen);
+        if (td_result.message.size() > kMaxMessageLen) td_result.message.resize(kMaxMessageLen);
         has_message = true;
       }
-    } catch (...) {}
+    } catch (...) {
+    }
   }
   if (!has_message) td_result.message_type = td_result.message = "";
+}
+
+void ReadPolygonSpecjudgeResult(int code, const fs::path& output_path, bool last_stage,
+                                SubmissionResult::TestdataResult& td_result) {
+  if (code < 50 && code != 0 && code != 7) {
+    td_result.verdict = Verdict::WA;
+    return;
+  }
+
+  SetACOrContinue(last_stage, td_result);
+  std::ifstream fin(output_path);
+  if (code == 7) {
+    long double score = 0;
+    if (std::string meta; (fin >> meta) && meta == "points") {
+      fin >> score;
+      td_result.score = NormalizeScore(score);
+    } else {
+      td_result.score = 0;
+    }
+  } else if (code >= 50) {
+    td_result.score = (code - 50) * (100'000'000 / 200);
+  }
+  if (td_result.score < 100'000'000) td_result.verdict = Verdict::WA;
+  if (fin) ParseSpecjudgeOverrides(fin, td_result, false, false);
+}
+
+void ReadKattisSpecjudgeResult(int code, const fs::path& output_path, const fs::path& user_output_path,
+                               const fs::path& judge_dir, bool last_stage,
+                               SubmissionResult::TestdataResult& td_result) {
+  if (code == 42) {
+    SetACOrContinue(last_stage, td_result);
+    if (!last_stage) {
+      fs::path nextpass_path = judge_dir / "nextpass.in";
+      if (fs::is_regular_file(nextpass_path)) {
+        Move(nextpass_path, user_output_path);
+      } else {
+        // no nextpass.in = immediate success
+        td_result.verdict = Verdict::AC;
+      }
+    }
+    if (std::ifstream fin(judge_dir / "score_multiplier.txt"); fin) {
+      long double score_multiplier = 0;
+      if (fin >> score_multiplier) td_result.score = NormalizeScore(score_multiplier * 100);
+    }
+    if (std::ifstream fin(judge_dir / "score.txt"); fin) {
+      long double score = 0;
+      if (fin >> score) td_result.score = NormalizeScore(score);
+    }
+  } else {
+    td_result.verdict = Verdict::WA;
+  }
+  if (std::ifstream fin(judge_dir / "teammessage.txt"); fin) {
+    td_result.message_type = "text";
+    td_result.message.resize(kMaxMessageLen);
+    fin.read(&td_result.message[0], td_result.message.size());
+    td_result.message.resize(fin.gcount());
+  }
+  if (std::ifstream fin(judge_dir / "judgemessage.txt"); fin) {
+    ParseSpecjudgeOverrides(fin, td_result, true, false);
+  }
+}
+
+void ReadSpecjudgeResult(const Submission& sub, const siginfo_t& info, bool last_stage,
+                         const fs::path& output_path, const fs::path& user_output_path,
+                         const fs::path& tempdir_path, SubmissionResult::TestdataResult& td_result) {
+  Verdict jre_verdict = sub.specjudge_re_as_wa ? Verdict::WA : Verdict::JRE;
+  if (!fs::is_regular_file(output_path) || info.si_code != CLD_EXITED ||
+      (sub.specjudge_type != SpecjudgeType::SPECJUDGE_POLYGON &&
+       sub.specjudge_type != SpecjudgeType::SPECJUDGE_KATTIS && info.si_status != 0) ||
+      (sub.specjudge_type == SpecjudgeType::SPECJUDGE_POLYGON && info.si_status == 3) ||
+      (sub.specjudge_type == SpecjudgeType::SPECJUDGE_KATTIS && info.si_status != 42 &&
+       info.si_status != 43)) {
+    // specjudge failed unexpectedly
+    if (td_result.verdict == Verdict::NUL) td_result.verdict = jre_verdict;
+    return;
+  }
+
+  if (sub.specjudge_type == SpecjudgeType::SPECJUDGE_OLD) {
+    ReadOldSpecjudgeResult(output_path, last_stage, td_result);
+  } else if (sub.specjudge_type == SpecjudgeType::SPECJUDGE_POLYGON) {
+    ReadPolygonSpecjudgeResult(info.si_status, output_path, last_stage, td_result);
+  } else if (sub.specjudge_type == SpecjudgeType::SPECJUDGE_KATTIS) {
+    ReadKattisSpecjudgeResult(info.si_status, output_path, user_output_path, tempdir_path, last_stage,
+                              td_result);
+  } else { // SPECJUDGE_NEW || NORMAL
+    try {
+      ReadNewSpecjudgeResult(output_path, td_result);
+    } catch (nlohmann::json::exception&) {
+      // WA
+    }
+  }
 }
 
 void FinalizeScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task,
@@ -639,24 +749,17 @@ void FinalizeScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task,
   int stage = task.task.stage;
   auto& td_result = sub_res.td_results[subtask];
   auto output_path = ScoringBoxOutput(id, subtask, stage);
+  auto user_output_path = ScoringBoxUserOutput(id, subtask, stage);
+  // only used in Kattis
+  auto tempdir_path = ScoringBoxTempdir(id, subtask, stage);
 
   bool last_stage = stage == sub.stages - 1;
   // default: WA or keep verdict (if TLE etc.) for last_stage,
   //          continue otherwise
   td_result.score = 0;
-  if (skipped) {
-    // skipped because of TLE/MLE/etc in old-style; do nothing
-  } else if (!fs::is_regular_file(output_path) || cjail_res.info.si_status != 0) {
-    // skip remaining stages
-    if (td_result.verdict == Verdict::NUL) td_result.verdict = Verdict::WA;
-  } else if (sub.specjudge_type == SpecjudgeType::SPECJUDGE_OLD) {
-    ReadOldSpecjudgeResult(output_path, last_stage, td_result);
-  } else {
-    try {
-      ReadNewSpecjudgeResult(output_path, td_result);
-    } catch (nlohmann::json::exception&) {
-      // WA
-    }
+  if (!skipped) {
+    ReadSpecjudgeResult(sub, cjail_res.info, last_stage, output_path, user_output_path, tempdir_path,
+                        td_result);
   }
   if (!last_stage && td_result.verdict != Verdict::NUL) {
     td_result.skip_stage = true;
@@ -671,7 +774,7 @@ void FinalizeScoring(SubmissionAndResult& sub_and_result, const TaskEntry& task,
   // move possibly modified user output back to original position
   // so that it can be read by the next stage
   if (!last_stage && !skipped && !td_result.skip_stage && sub.specjudge_type != SpecjudgeType::SKIP) {
-    Move(ScoringBoxUserOutput(id, subtask, stage), ExecuteBoxFinalOutput(id, subtask, stage));
+    Move(user_output_path, ExecuteBoxFinalOutput(id, subtask, stage));
   }
 
   // remove testdata-related files
@@ -704,7 +807,7 @@ bool SetupSummary(SubmissionAndResult& sub_and_result, const TaskEntry& task) {
       if ((int)res.verdict < (int)td.verdict) res.verdict = td.verdict;
     }
   }
-  if (sub.summary_type == SummaryType::NONE || res.verdict == Verdict::ER) return false;
+  if (sub.summary_type == SummaryType::NONE || res.verdict == Verdict::JCE) return false;
 
   long id = sub.submission_internal_id;
   CreateDirs(Workdir(SummaryBoxPath(id)), fs::perms::all);
@@ -743,13 +846,15 @@ void ReadSummaryResult(const fs::path& output_path, SubmissionResult& res) {
       } else if (it->is_number()) {
         res.total_score = NormalizeScore(it->get<long double>());
       }
-    } catch (...) {}
+    } catch (...) {
+    }
   }
   auto ReadNumber = [&](const char* attr, long& target) {
     if (auto it = json.find(attr); it != json.end() && it->is_number()) {
       try {
         target = it->get<long>();
-      } catch (...) {}
+      } catch (...) {
+      }
     }
   };
   ReadNumber("total_time_us", res.total_time);
@@ -760,7 +865,8 @@ void ReadSummaryResult(const fs::path& output_path, SubmissionResult& res) {
 }
 
 /// Submission tasks env teardown
-void FinalizeSummary(SubmissionAndResult& sub_and_result, const TaskEntry& task, const struct cjail_result& cjail_res, bool skipped) {
+void FinalizeSummary(SubmissionAndResult& sub_and_result, const TaskEntry& task,
+                     const struct cjail_result& cjail_res, bool skipped) {
   const Submission& sub = sub_and_result.sub;
   SubmissionResult& res = sub_and_result.result;
   long id = sub.submission_internal_id;
@@ -791,14 +897,14 @@ void FinalizeSummary(SubmissionAndResult& sub_and_result, const TaskEntry& task,
   if (!skipped) {
     auto output_path = SummaryBoxOutput(id);
     if (!fs::is_regular_file(output_path) || cjail_res.info.si_status != 0) {
-      res.verdict = Verdict::WA;
+      res.verdict = Verdict::JRE;
       res.total_memory = 0;
       res.total_time = 0;
     } else {
       try {
         ReadSummaryResult(output_path, res);
       } catch (nlohmann::json::exception&) {
-        res.verdict = Verdict::WA;
+        res.verdict = Verdict::JRE;
         res.total_memory = 0;
         res.total_time = 0;
       }
@@ -813,7 +919,8 @@ void FinalizeSummary(SubmissionAndResult& sub_and_result, const TaskEntry& task,
     if (sub.reporter.ReportOverallResult) sub.reporter.ReportOverallResult(sub, res);
   }
   cancelled_group.erase(id);
-  spdlog::info("Submission finished: id={} sub_id={} list_size={}", id, sub.submission_id, submission_list.size());
+  spdlog::info("Submission finished: id={} sub_id={} list_size={}", id, sub.submission_id,
+               submission_list.size());
   if (sub.reporter.ReportFinalized) sub.reporter.ReportFinalized(sub, res, submission_list.size());
   submission_id_map.erase(id);
   submission_list.erase(id);
@@ -823,7 +930,8 @@ void FinalizeSummary(SubmissionAndResult& sub_and_result, const TaskEntry& task,
 void FinalizeTask(long id, const struct cjail_result& res, bool skipped = false) {
   auto& entry = task_list[id];
   spdlog::info("Finalizing task: id={} taskid={} tasktype={} subtask={} stage={} skipped={}",
-               entry.submission_internal_id, id, TaskTypeName(entry.task.type), entry.task.subtask, entry.task.stage, skipped);
+               entry.submission_internal_id, id, TaskTypeName(entry.task.type), entry.task.subtask,
+               entry.task.stage, skipped);
   if (!skipped || entry.task.type == TaskType::SUMMARY) {
     auto& sub = submission_list.at(entry.submission_internal_id);
     switch (entry.task.type) {
@@ -840,7 +948,8 @@ bool DispatchTask(long id) {
   auto& entry = task_list[id];
   auto& sub = submission_list.at(entry.submission_internal_id);
   spdlog::info("Dispatching task: id={} taskid={} tasktype={} subtask={} stage={}",
-               entry.submission_internal_id, id, TaskTypeName(entry.task.type), entry.task.subtask, entry.task.stage);
+               entry.submission_internal_id, id, TaskTypeName(entry.task.type), entry.task.subtask,
+               entry.task.stage);
   bool res = false;
   switch (entry.task.type) {
     case TaskType::COMPILE: res = SetupCompile(sub, entry); break;
@@ -872,7 +981,7 @@ void WorkLoop(bool loop) {
   std::unique_lock lck(task_mtx);
   do {
     // no task running here
-    task_cv.wait(lck, []{ return !task_queue.empty(); });
+    task_cv.wait(lck, [] { return !task_queue.empty(); });
     int task_running = 0;
     while (task_running || !task_queue.empty()) {
       if (task_running < kMaxParallel && task_queue.size()) {
@@ -939,19 +1048,19 @@ bool PushSubmission(Submission&& sub, size_t max_queue) {
       std::vector<int> scan_order(num_tds);
       for (int i = 0; i < num_tds; i++) scan_order[i] = i;
       // Process testdata with more groups first
-      std::stable_sort(
-          scan_order.begin(), scan_order.end(),
-          [&sub](int a, int b) { return sub.testdata[a].td_groups.size() > sub.testdata[b].td_groups.size(); });
+      std::stable_sort(scan_order.begin(), scan_order.end(), [&sub](int a, int b) {
+        return sub.testdata[a].td_groups.size() > sub.testdata[b].td_groups.size();
+      });
       std::vector<std::unordered_set<int>> group_layers;
       for (int td : scan_order) {
         auto& td_group = sub.testdata[td].td_groups;
-        size_t pos = std::lower_bound(
-            group_layers.begin(), group_layers.end(), true,
-            [&td_group](const auto& layer, bool _) {
-              return std::all_of(
-                  td_group.begin(), td_group.end(),
-                  [&layer](int group) { return layer.count(group); });
-            }) - group_layers.begin();
+        size_t pos =
+            std::lower_bound(group_layers.begin(), group_layers.end(), true,
+                             [&td_group](const auto& layer, bool _) {
+                               return std::all_of(td_group.begin(), td_group.end(),
+                                                  [&layer](int group) { return layer.count(group); });
+                             }) -
+            group_layers.begin();
         if (pos == group_layers.size()) group_layers.emplace_back();
         group_layers[pos].insert(td_group.begin(), td_group.end());
         td_layer[td] = pos;
@@ -1009,8 +1118,7 @@ bool PushSubmission(Submission&& sub, size_t max_queue) {
     InsertTaskList(std::move(compile));
   }
 
-  if (sub.specjudge_type == SpecjudgeType::SPECJUDGE_OLD ||
-      sub.specjudge_type == SpecjudgeType::SPECJUDGE_NEW) {
+  if (sub.specjudge_type != SpecjudgeType::NORMAL) {
     TaskEntry compile(id, {TaskType::COMPILE, (int)CompileSubtask::SPECJUDGE}, priority);
     for (auto& i : scorings) Link(compile, i[0]);
     if (executes.empty()) Link(compile, summary);
@@ -1021,8 +1129,10 @@ bool PushSubmission(Submission&& sub, size_t max_queue) {
     Link(compile, summary);
     InsertTaskList(std::move(compile));
   }
-  for (auto& i : executes) for (auto& j : i) InsertTaskList(std::move(j));
-  for (auto& i : scorings) for (auto& j : i) InsertTaskList(std::move(j));
+  for (auto& i : executes)
+    for (auto& j : i) InsertTaskList(std::move(j));
+  for (auto& i : scorings)
+    for (auto& j : i) InsertTaskList(std::move(j));
   InsertTaskList(std::move(summary));
   submission_list.insert({id, std::move(sub)});
   if (auto it = submission_id_map.insert({sub.submission_id, id}); !it.second) {
@@ -1030,7 +1140,8 @@ bool PushSubmission(Submission&& sub, size_t max_queue) {
     cancelled_list.insert(it.first->second);
     it.first->second = id;
   }
-  spdlog::info("Submission enqueued: id={} sub_id={} prob_id={} list_size={}", id, sub.submission_id, sub.problem_id, submission_list.size());
+  spdlog::info("Submission enqueued: id={} sub_id={} prob_id={} list_size={}", id, sub.submission_id,
+               sub.problem_id, submission_list.size());
   lck.unlock();
   task_cv.notify_one();
   return true;

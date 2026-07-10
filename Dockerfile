@@ -8,9 +8,9 @@ RUN apt install -y g++-14 && update-alternatives --install /usr/bin/g++ g++ /usr
 
 COPY . ./
 
-WORKDIR /judge/build
-RUN cmake -G Ninja ..
-RUN ninja && ninja install
+RUN cmake -B build -G Ninja
+RUN cmake --build build
+RUN cmake --install build
 
 WORKDIR /judge
 

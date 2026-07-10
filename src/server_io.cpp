@@ -1,24 +1,22 @@
 #include "server_io.h"
 
+#include <chrono>
+#include <condition_variable>
 #include <list>
 #include <mutex>
-#include <chrono>
-#include <memory>
-#include <unordered_set>
-#include <condition_variable>
 
-#include <zstd.h>
 #include <httplib.h>
 #include <spdlog/fmt/bundled/core.h>
 #include <spdlog/fmt/bundled/ranges.h>
+#include <zstd.h>
 #include <nlohmann/json.hpp>
 
-#include "paths.h"
 #include "database.h"
-#include "websocket.h"
 #include "http_utils.h"
+#include "paths.h"
 #include "tioj/paths.h"
 #include "tioj/utils.h"
+#include "websocket.h"
 
 std::string kTIOJUrl = "";
 std::string kTIOJKey = "";
@@ -29,12 +27,8 @@ namespace {
 const std::string kChannelIdentifier = "{\"channel\":\"FetchChannel\"}";
 
 /// --- paths & helpers ---
-fs::path TdPool() {
-  return kTestdataRoot / "td-pool";
-}
-fs::path TdPoolDir(long id) {
-  return TdPool() / fmt::format("{:04d}", id / 100);
-}
+fs::path TdPool() { return kTestdataRoot / "td-pool"; }
+fs::path TdPoolDir(long id) { return TdPool() / fmt::format("{:04d}", id / 100); }
 fs::path TdPoolPath(long id, bool is_input, bool is_temp) {
   std::string name = fmt::format("{:06d}.{}", id, is_input ? "in" : "out");
   if (is_temp) name += ".tmp";
@@ -51,6 +45,8 @@ Database db;
 
 /// --- websocket client ---
 constexpr double kUniqueReqMinInterval = 0.5;
+constexpr double kFetchMinInterval = 0.2;
+static_assert(kFetchMinInterval <= kUniqueReqMinInterval);
 
 // outgoing requests
 struct Request {
@@ -71,6 +67,9 @@ struct Request {
     }
     return ret.dump();
   }
+
+  static constexpr long kFetchKey = -1;
+  static constexpr long kReportQueuedKey = -2;
 };
 
 std::set<std::pair<double, long>> unsent_timestamps;
@@ -149,11 +148,23 @@ void OneSubmissionThread(nlohmann::json&& data) {
     return;
   }
   if (CurrentSubmissionQueueSize() + 1 < kMaxQueue) TryFetchSubmission();
-  if (!DealOneSubmission(std::move(data))) {
+  bool success = false;
+  try {
+    success = DealOneSubmission(std::move(data));
+  } catch (...) {
+  }
+  if (!success) {
     // send JE
     SendStatus(submission_id, VerdictToAbr(Verdict::JE));
     TryFetchSubmission();
   }
+}
+
+// backward compat: JCE -> ER for < 3.5.0
+bool jce_to_er = true;
+inline std::string VerdictToAbrCompat(Verdict verdict) {
+  if (jce_to_er && verdict == Verdict::JCE) return "ER";
+  return VerdictToAbr(verdict);
 }
 
 // websocket class
@@ -165,13 +176,17 @@ class TIOJClient : public WsClient {
       Connect();
     }).detach();
   }
+
  public:
-  TIOJClient() : WsClient("ws" + kTIOJUrl.substr(4) + "/cable?" + httplib::detail::params_to_query_str({
-      {"key", kTIOJKey}, {"version", kVersionCode}})) {}
+  TIOJClient()
+      : WsClient("ws" + kTIOJUrl.substr(4) + "/cable?" +
+                 httplib::detail::params_to_query_str({{"key", kTIOJKey}, {"version", kVersionCode}})),
+        server_version("3.4.0") {}
 
   double last_ping = 0;
+  std::string server_version;
 
-  void OnOpen() override {
+  void OnOpen(Response resp) override {
     spdlog::info("Connected to server websocket");
     last_ping = MonotonicTimestamp();
     Request req{};
@@ -185,8 +200,9 @@ class TIOJClient : public WsClient {
     ReconnectThread_();
   }
   void OnClose() override {
-    spdlog::warn("Connection with server closed, reconnect in 3 seconds. "
-                 "If this keep happening, check if the key and the client version are correct");
+    spdlog::warn(
+        "Connection with server closed, reconnect in 3 seconds. "
+        "If this keep happening, check if the key and the client version are correct");
     ReconnectThread_();
   }
 
@@ -202,7 +218,25 @@ class TIOJClient : public WsClient {
       data = json::parse(msg);
       last_ping = MonotonicTimestamp();
       spdlog::debug("Message from server: {}", msg);
-      if (data.contains("type")) return; // confirm_subscription or ping
+      if (data.contains("type")) {
+        // welcome, confirm_subscription or ping
+        if (data["type"] == "welcome") {
+          server_version = data.value("version", "3.4.0");
+          spdlog::info("Server version: {}", server_version);
+          int major_version = 3, minor_version = 4;
+          try {
+            size_t first_dot = server_version.find('.');
+            size_t second_dot = server_version.find('.', first_dot + 1);
+            major_version = std::stoi(server_version.substr(0, first_dot));
+            minor_version = std::stoi(server_version.substr(first_dot + 1, second_dot - first_dot - 1));
+          } catch (...) {
+            spdlog::error("Invalid server version, disconnecting");
+            Close();
+          }
+          jce_to_er = std::make_pair(major_version, minor_version) < std::make_pair(3, 5);
+        }
+        return;
+      }
       msg_type = data["message"]["type"].get<std::string>();
     } catch (json::exception& err) {
       spdlog::warn("JSON decoding error: {}", err.what());
@@ -229,7 +263,7 @@ void RequestLoop() {
   std::unique_lock lck(request_queue_mtx);
   while (true) {
     request_queue_cv.wait_for(lck, std::chrono::duration<double>(kUniqueReqMinInterval / 2),
-        [&cli](){ return cli.CanSend() && CheckUniqueRequests(); });
+                              [&cli]() { return cli.CanSend() && CheckUniqueRequests(); });
     if (cli.CanSend() && cli.last_ping > 0 && MonotonicTimestamp() - cli.last_ping > 8) {
       cli.Close();
       continue;
@@ -237,7 +271,11 @@ void RequestLoop() {
     while (request_queue.size()) {
       Request req = std::move(request_queue.front());
       if (req.is_unique) {
-        unique_timestamp_map[req.key] = MonotonicTimestamp();
+        long ts = MonotonicTimestamp();
+        if (req.key == Request::kFetchKey) {
+          ts -= kUniqueReqMinInterval - kFetchMinInterval; // fetch can be more frequent
+        }
+        unique_timestamp_map[req.key] = ts;
       } else if (req.force_pop) {
         unique_timestamp_map.erase(req.key);
       }
@@ -255,35 +293,33 @@ void RequestLoop() {
 
 /// --- reporter ---
 Submission::Reporter server_reporter = {
-  .ReportStartCompiling = [](const Submission& sub, const SubmissionResult&) {
-    SendStatus(sub.submission_id, "Validating");
-  },
-  .ReportOverallResult = [](const Submission& sub, const SubmissionResult& res) {
-    SendFinalResult(sub, res);
-  },
-  .ReportScoringResult = [](const Submission& sub, const SubmissionResult& res, int subtask, int) {
-    SendResult(sub, res, subtask);
-  },
-  // no ReportCE/ERMessage; ReportOverallResult will send the message
-  // we do this because it is possible that a submission gets both CE and ER message,
-  //  so it is better to send it after completion
-  .ReportFinalized = [](const Submission&, const SubmissionResult&, size_t queue_size_before_pop) {
-    if (queue_size_before_pop == kMaxQueue) TryFetchSubmission();
-  },
+    .ReportStartCompiling = [](const Submission& sub,
+                               const SubmissionResult&) { SendStatus(sub.submission_id, "Validating"); },
+    .ReportOverallResult = [](const Submission& sub,
+                              const SubmissionResult& res) { SendFinalResult(sub, res); },
+    .ReportScoringResult = [](const Submission& sub, const SubmissionResult& res, int subtask,
+                              int) { SendResult(sub, res, subtask); },
+    // no ReportCE/JCEMessage; ReportOverallResult will send the message
+    // we do this because it is possible that a submission gets both CE and ER message,
+    //  so it is better to send it after completion
+    .ReportFinalized =
+        [](const Submission&, const SubmissionResult&, size_t queue_size_before_pop) {
+          if (queue_size_before_pop == kMaxQueue) TryFetchSubmission();
+        },
 };
 
 // --- helpers ---
 template <class Method, class... T>
 inline auto DownloadFile(const fs::path& path, bool compressed, T&&... params) {
   std::ofstream fout;
-  auto Init = [&](){
+  auto Init = [&]() {
     if (fout.is_open()) fout.close();
     fout.open(path);
   };
   if (compressed) {
     std::vector<uint8_t> bufOut(ZSTD_DStreamOutSize());
     ZSTD_DCtx* const dctx = ZSTD_createDCtx();
-    auto reciever = [&](const char *data, size_t data_length) {
+    auto reciever = [&](const char* data, size_t data_length) {
       ZSTD_inBuffer input = {data, data_length, 0};
       while (input.pos < input.size) {
         ZSTD_outBuffer output = {bufOut.data(), bufOut.size(), 0};
@@ -293,17 +329,15 @@ inline auto DownloadFile(const fs::path& path, bool compressed, T&&... params) {
       }
       return true;
     };
-    auto ret = RequestRetryInit<Method>(
-        Init, std::forward<T>(params)..., reciever);
+    auto ret = RequestRetryInit<Method>(Init, std::forward<T>(params)..., reciever);
     ZSTD_freeDCtx(dctx);
     return ret;
   } else {
-    auto reciever = [&fout](const char *data, size_t data_length) {
+    auto reciever = [&fout](const char* data, size_t data_length) {
       fout.write(data, data_length);
       return true;
     };
-    return RequestRetryInit<Method>(
-        Init, std::forward<T>(params)..., reciever);
+    return RequestRetryInit<Method>(Init, std::forward<T>(params)..., reciever);
   }
 }
 
@@ -314,6 +348,7 @@ httplib::Params AddKey(httplib::Params&& params) {
 
 class TempDirectory { // RAII tempdir
   fs::path path_;
+
  public:
   const fs::path& Path() const { return path_; }
   fs::path UserCodePath() const { return path_ / "code"; }
@@ -333,35 +368,36 @@ class TempDirectory { // RAII tempdir
 };
 
 unsigned char Base64CharToValue(const unsigned char chr) {
-  if      (chr >= 'A' && chr <= 'Z') return chr - 'A';
-  else if (chr >= 'a' && chr <= 'z') return chr - 'a' + ('Z' - 'A')               + 1;
-  else if (chr >= '0' && chr <= '9') return chr - '0' + ('Z' - 'A') + ('z' - 'a') + 2;
-  else if (chr == '+' || chr == '-') return 62;
-  else if (chr == '/' || chr == '_') return 63;
+  if (chr >= 'A' && chr <= 'Z')
+    return chr - 'A';
+  else if (chr >= 'a' && chr <= 'z')
+    return chr - 'a' + ('Z' - 'A') + 1;
+  else if (chr >= '0' && chr <= '9')
+    return chr - '0' + ('Z' - 'A') + ('z' - 'a') + 2;
+  else if (chr == '+' || chr == '-')
+    return 62;
+  else if (chr == '/' || chr == '_')
+    return 63;
   return 0;
 }
 
 void OutputBase64(std::ostream& fout, const std::string& str) {
   size_t i = 0;
   for (; i + 4 < str.size(); i += 4) {
-    unsigned char v[4] = {
-      Base64CharToValue(str[i]),
-      Base64CharToValue(str[i+1]),
-      Base64CharToValue(str[i+2]),
-      Base64CharToValue(str[i+3])
-    };
+    unsigned char v[4] = {Base64CharToValue(str[i]), Base64CharToValue(str[i + 1]),
+                          Base64CharToValue(str[i + 2]), Base64CharToValue(str[i + 3])};
     fout << static_cast<unsigned char>((v[0] << 2) | (v[1] & 0x30) >> 4);
     fout << static_cast<unsigned char>((v[1] & 0x0f) << 4 | (v[2] & 0x3c) >> 2);
     fout << static_cast<unsigned char>((v[2] & 0x03) << 6 | v[3]);
   }
-  if (i + 1 >= str.size() || str[i+1] == '=') return;
-  unsigned char v[4] = {Base64CharToValue(str[i]), Base64CharToValue(str[i+1])};
+  if (i + 1 >= str.size() || str[i + 1] == '=') return;
+  unsigned char v[4] = {Base64CharToValue(str[i]), Base64CharToValue(str[i + 1])};
   fout << static_cast<unsigned char>((v[0] << 2) | (v[1] & 0x30) >> 4);
-  if (i + 2 >= str.size() || str[i+2] == '=') return;
-  v[2] = Base64CharToValue(str[i+2]);
+  if (i + 2 >= str.size() || str[i + 2] == '=') return;
+  v[2] = Base64CharToValue(str[i + 2]);
   fout << static_cast<unsigned char>((v[1] & 0x0f) << 4 | (v[2] & 0x3c) >> 2);
-  if (i + 3 >= str.size() || str[i+3] == '=') return;
-  v[3] = Base64CharToValue(str[i+3]);
+  if (i + 3 >= str.size() || str[i + 3] == '=') return;
+  v[3] = Base64CharToValue(str[i + 3]);
   fout << static_cast<unsigned char>((v[2] & 0x03) << 6 | v[3]);
 }
 
@@ -424,6 +460,7 @@ bool DealOneSubmission(nlohmann::json&& data) {
       sub.specjudge_compile_args = problem["specjudge_compile_args"].get<std::string>();
       sub.judge_abnormally_terminated = problem.value<bool>(
           "judge_abnormally_terminated", sub.specjudge_type == SpecjudgeType::SPECJUDGE_NEW);
+      sub.specjudge_re_as_wa = problem.value<bool>("judge_re_as_wa", true);
     }
 
     sub.interlib_type = (InterlibType)problem["interlib_type"].get<int>();
@@ -509,14 +546,14 @@ bool DealOneSubmission(nlohmann::json&& data) {
     if (!CreateDirs(TdPoolDir(testdata_id))) return false;
     const Testdata& td = new_meta.at(testdata_id);
     // input
-    auto res = DownloadFile<HTTPGet>(TdPoolPath(testdata_id, true, true),
-        td.input_compressed, cli, "/fetch/testdata",
+    auto res = DownloadFile<HTTPGet>(
+        TdPoolPath(testdata_id, true, true), td.input_compressed, cli, "/fetch/testdata",
         AddKey({{"tid", std::to_string(testdata_id)}, {"input", ""}}), Headers());
     if (!IsSuccess(res)) return false;
     // output
-    res = DownloadFile<HTTPGet>(TdPoolPath(testdata_id, false, true),
-        td.output_compressed, cli, "/fetch/testdata",
-        AddKey({{"tid", std::to_string(testdata_id)}}), Headers());
+    res =
+        DownloadFile<HTTPGet>(TdPoolPath(testdata_id, false, true), td.output_compressed, cli,
+                              "/fetch/testdata", AddKey({{"tid", std::to_string(testdata_id)}}), Headers());
     if (!IsSuccess(res)) return false;
   }
   // update symlinks
@@ -582,12 +619,11 @@ bool DealOneSubmission(nlohmann::json&& data) {
 }
 
 nlohmann::json OneTdJSON(const SubmissionResult::TestdataResult& nowtd, int position) {
-  nlohmann::json tddata{
-      {"position", position},
-      {"verdict", VerdictToAbr(nowtd.verdict)},
-      {"time", nowtd.time},
-      {"rss", nowtd.rss},
-      {"score", nowtd.score}};
+  nlohmann::json tddata{{"position", position},
+                        {"verdict", VerdictToAbrCompat(nowtd.verdict)},
+                        {"time", nowtd.time},
+                        {"rss", nowtd.rss},
+                        {"score", nowtd.score}};
   if (nowtd.vss == 0) {
     tddata["vss"] = nullptr;
   } else {
@@ -619,7 +655,7 @@ nlohmann::json TdResultsJSON(const SubmissionResult& res, int subtask = -1) {
 void TryFetchSubmission() {
   Request req{};
   req.is_unique = true;
-  req.key = -1;
+  req.key = Request::kFetchKey;
   req.action = "fetch_submission";
   PushRequest(std::move(req));
 }
@@ -635,20 +671,18 @@ void SendResult(const Submission& sub, const SubmissionResult& res, int subtask)
 }
 
 void SendFinalResult(const Submission& sub, const SubmissionResult& res) {
-  nlohmann::json data{
-    {"submission_id", sub.submission_id},
-    {"verdict", VerdictToAbr(res.verdict)},
-    {"score", res.total_score},
-    {"total_time", res.total_time},
-    {"total_memory", res.total_memory}
-  };
+  nlohmann::json data{{"submission_id", sub.submission_id},
+                      {"verdict", VerdictToAbrCompat(res.verdict)},
+                      {"score", res.total_score},
+                      {"total_time", res.total_time},
+                      {"total_memory", res.total_memory}};
   if (res.ce_message.size()) {
     data["message"] = res.ce_message;
   }
   if (res.verdict == Verdict::CE || res.verdict == Verdict::CLE) {
     // nothing
-  } else if (res.verdict == Verdict::ER) {
-    data["message"] = res.er_message;
+  } else if (res.verdict == Verdict::JCE) {
+    data["message"] = res.jce_message;
   } else {
     data["td_results"] = TdResultsJSON(res);
   }
@@ -676,7 +710,7 @@ void SendQueuedSubmissions(bool send_if_empty) {
   nlohmann::json data{{"submission_ids", ids}};
   Request req{};
   req.is_unique = true;
-  req.key = -2;
+  req.key = Request::kReportQueuedKey;
   req.action = "report_queued";
   req.body = std::move(data);
   PushRequest(std::move(req));

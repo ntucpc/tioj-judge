@@ -4,7 +4,7 @@
 #include <string>
 #include "tioj/submission.h"
 
-const std::string kVersionCode = "2.2.0";
+const std::string kVersionCode = "2.3.1";
 extern std::string kTIOJUrl;
 extern std::string kTIOJKey;
 extern size_t kMaxQueue;
@@ -27,4 +27,4 @@ void SendQueuedSubmissions(bool send_if_empty);
 // It will not return.
 void ServerWorkLoop();
 
-#endif  // SERVER_IO_H_
+#endif // SERVER_IO_H_
