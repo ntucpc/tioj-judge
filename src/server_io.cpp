@@ -1,9 +1,11 @@
 #include "server_io.h"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <list>
 #include <mutex>
+#include <system_error>
 
 #include <httplib.h>
 #include <spdlog/fmt/bundled/core.h>
@@ -140,22 +142,30 @@ std::mutex judge_mtx;
 bool DealOneSubmission(nlohmann::json&& data);
 
 void OneSubmissionThread(nlohmann::json&& data) {
-  int submission_id = data["submission_id"].get<int>();
-  std::lock_guard lck(judge_mtx);
-  // optionally reject submission here
-  if (CurrentSubmissionQueueSize() >= kMaxQueue) {
-    SendStatus(submission_id, "queued");
-    return;
-  }
-  if (CurrentSubmissionQueueSize() + 1 < kMaxQueue) TryFetchSubmission();
-  bool success = false;
   try {
-    success = DealOneSubmission(std::move(data));
-  } catch (...) {
-  }
-  if (!success) {
-    // send JE
-    SendStatus(submission_id, VerdictToAbr(Verdict::JE));
+    const int submission_id = data.at("submission_id").get<int>();
+    std::lock_guard lck(judge_mtx);
+    // optionally reject submission here
+    if (CurrentSubmissionQueueSize() >= kMaxQueue) {
+      SendStatus(submission_id, "queued");
+      return;
+    }
+    if (CurrentSubmissionQueueSize() + 1 < kMaxQueue) {
+      TryFetchSubmission();
+    }
+    auto try_deal_submission = [&] {
+      try {
+        return DealOneSubmission(std::move(data));
+      } catch (...) {
+        return false;
+      }
+    };
+    if (!try_deal_submission()) {
+      SendStatus(submission_id, VerdictToAbr(Verdict::JE));
+      TryFetchSubmission();
+    }
+  } catch (const nlohmann::json::exception& err) {
+    spdlog::warn("Submission parsing error: {}", err.what());
     TryFetchSubmission();
   }
 }
@@ -245,7 +255,11 @@ class TIOJClient : public WsClient {
     if (msg_type == "notify") {
       TryFetchSubmission();
     } else if (msg_type == "submission") {
-      std::thread(OneSubmissionThread, std::move(data["message"]["data"])).detach();
+      try {
+        std::thread(OneSubmissionThread, std::move(data["message"]["data"])).detach();
+      } catch (const std::system_error&) {
+        spdlog::warn("Dropping submission frame: thread limit reached");
+      }
     }
   }
 
@@ -442,9 +456,12 @@ bool DealOneSubmission(nlohmann::json&& data) {
     auto& problem = data["problem"];
     sub.problem_id = problem["id"].get<int>();
     sub.sandbox_strict = problem["strict_mode"].get<bool>();
-    sub.stages = problem["num_stages"].get<int>();
+    sub.stages = std::clamp(problem["num_stages"].get<int>(), 1, 32);
 
     sub.problem_prog_stages = problem.value<std::set<int>>("problem_prog_stages", {});
+    for (int s : sub.problem_prog_stages) {
+      if (s < 0 || s >= sub.stages) return false;
+    }
     if (sub.problem_prog_stages.size() > 0) {
       sub.problem_prog_lang = GetCompiler(problem["problem_prog_compiler"].get<std::string>());
       std::ofstream(tempdir.ProbProgPath()) << problem["problem_prog_code"].get<std::string>();
@@ -507,9 +524,9 @@ bool DealOneSubmission(nlohmann::json&& data) {
         // limits
         auto& lim = sub.testdata[i];
         lim.time = td_item["time"].get<int64_t>();
-        lim.vss = td_item["vss"].get<int64_t>();
-        lim.rss = td_item["rss"].get<int64_t>();
-        lim.output = td_item["output"].get<int64_t>();
+        lim.vss = std::max<int64_t>(td_item["vss"].get<int64_t>(), 0);
+        lim.rss = std::max<int64_t>(td_item["rss"].get<int64_t>(), 0);
+        lim.output = std::max<int64_t>(td_item["output"].get<int64_t>(), 0);
         if (sub.lang == Compiler::HASKELL && lim.vss > 0) {
           // Haskell uses a lot of VSS, thus we limit RSS instead
           lim.rss = lim.rss == 0 ? lim.vss : std::min(lim.vss, lim.rss);
@@ -533,7 +550,9 @@ bool DealOneSubmission(nlohmann::json&& data) {
     for (size_t i = 0; i < tasks.size(); i++) {
       auto& item = tasks[i];
       for (auto& td_pos : item["positions"]) {
-        sub.testdata[td_pos.get<int>()].td_groups.push_back(i);
+        int p = td_pos.get<int>();
+        if (p < 0 || p >= td_count) return false;
+        sub.testdata[p].td_groups.push_back(i);
       }
       sub.group_score[i] = item["score"].get<long>();
     }

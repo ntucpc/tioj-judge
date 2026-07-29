@@ -2,6 +2,7 @@
 #include <unistd.h>
 
 #include "sandbox.h"
+#include "sandbox_io.h"
 
 namespace {
 
@@ -19,9 +20,10 @@ struct cjail_result SandboxExec(const SandboxOptions& opt) {
 
 int main() {
   long sz = 0;
-  if (read(0, &sz, sizeof(sz)) < 0) return 1;
+  if (!ReadFull(0, &sz, sizeof(sz))) return 1;
+  if (sz <= 0 || sz > kSandboxMaxPayload) return 1;
   std::vector<uint8_t> buf(sz);
-  if (read(0, buf.data(), sz) < 0) return 1;
+  if (!ReadFull(0, buf.data(), static_cast<size_t>(sz))) return 1;
   struct cjail_result res = SandboxExec(SandboxOptions(buf));
-  if (write(1, &res, sizeof(res)) < 0) return 1;
+  if (!WriteFull(1, &res, sizeof(res))) return 1;
 }
