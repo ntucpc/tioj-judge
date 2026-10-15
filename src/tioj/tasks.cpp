@@ -186,7 +186,7 @@ struct cjail_result RunCompile(const SubmissionAndResult& sub_and_result, const 
   opt.wall_time = 60L * 1'000'000;
   opt.wall_time /= kTimeMultiplier;
   opt.rss = kMaxRSS;
-  opt.proc_num = 10;
+  opt.proc_num = 32;
   opt.fsize = kMaxOutput;
   opt.dirs = {"/usr", "/lib", "/lib64", "/etc/alternatives", "/bin"};
   if (lang == Compiler::HASKELL) {
@@ -318,7 +318,9 @@ struct cjail_result RunScoring(const SubmissionAndResult& sub_and_result, const 
                        {
                            ScoringBoxTdInput(-1, -1, -1, true),
                            ScoringBoxTdOutput(-1, -1, -1, true),
-                           ScoringBoxTempdir(-1, -1, -1, true),
+                           // Kattis PPF requires trailing slash
+                           // https://icpc.io/problem-package-format/spec/2025-09.html#invocation-1
+                           ScoringBoxTempdir(-1, -1, -1, true) / "",
                            // Kattis PPF allows additional arguments, so we use it to pass in metadata
                            ScoringBoxMetaFile(-1, -1, -1, true),
                        });
